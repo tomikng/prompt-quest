@@ -57,6 +57,9 @@ describe('prompt ranks', () => {
   })
   test('a quick acknowledgement is neutral', async () => {
     expect(grade('yes').xp).toBe(0)
+    expect(grade('Yes push them').xp).toBe(0)
+    expect(grade('yes push them').upgrade).toBe(null)
+    expect(grade('no, keep the old name').xp).toBe(0)
   })
   test('losing XP can drop a level', async () => {
     expect(levelOf(110).level).toBe(2)

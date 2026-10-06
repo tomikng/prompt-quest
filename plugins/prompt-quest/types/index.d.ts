@@ -69,8 +69,10 @@ export type Session = {
     cacheRead: number
     cacheWrite: number
   } | null
-  mood: 'idle' | 'up' | 'down'
+  mood: 'idle' | 'up' | 'down' | 'hit'
   moodAt: number
+  /** XP lost in the last hit, for the damage number. */
+  dmg?: number
 }
 
 export type Tab = 'hero' | 'skills' | 'quests' | 'lore'

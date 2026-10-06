@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Card, Grade, Save, Session, Tab } from '../types'
-import { barCells, heroScene, rankBadge, RANK_GLYPH } from './art'
+import { barCells, heroScene, HIT_FRAMES, rankBadge, RANK_GLYPH } from './art'
 import type { HeroClass, Mood } from './art'
 import {
   BRANCHES, LORE, PROMPT_TIPS, QUEST_XP, SKILLS,
@@ -76,10 +76,27 @@ const pushLog = (s: Save, line: string): Save => ({ ...s, log: [...s.log, line].
 
 let frame = 0
 let paneLive = false
-let look: { cls: HeroClass; mood: Mood; moodAt: number; rank: Grade['rank'] | null; bar: number | null } = {
-  cls: 'novice', mood: 'idle', moodAt: 0, rank: null, bar: null,
+let look: { cls: HeroClass; mood: Mood; moodAt: number; rank: Grade['rank'] | null; bar: number | null; dmg: number } = {
+  cls: 'novice', mood: 'idle', moodAt: 0, rank: null, bar: null, dmg: 0,
 }
-const moodNow = (now: number): Mood => (look.mood !== 'idle' && now - look.moodAt < MOOD_MS ? look.mood : 'idle')
+let bandRequest: string | null = null
+
+/** The mood to draw now, and for a hit how many frames into it we are. */
+function moodNow(now: number): { mood: Mood; t: number } {
+  const age = now - look.moodAt
+  if (look.mood === 'idle' || age >= MOOD_MS) return { mood: 'idle', t: 0 }
+  if (look.mood !== 'hit') return { mood: look.mood, t: 0 }
+  const t = Math.floor(age / FRAME_MS)
+  return t < HIT_FRAMES ? { mood: 'hit', t } : { mood: 'down', t }
+}
+
+/** Share of the XP bar to flash red while a hit drains it. */
+function lostShare(xp: number, t: number) {
+  if (look.dmg >= 0 || t >= HIT_FRAMES) return 0
+  const lv = levelOf(xp)
+  const drain = t < 8 ? 1 : 1 - (t - 8) / (HIT_FRAMES - 8)
+  return Math.min(-look.dmg / lv.need, 1 - lv.into / lv.need) * drain
+}
 
 // ── writes ────────────────────────────────────────────────────────────────
 
@@ -122,15 +139,18 @@ async function award($: $T, delta: number, why: string, questBumps: string[] = [
   } else if (b < a) {
     const dormant = s.unlocked.slice(b)
     $.ui.toast(`💀 Level down… level ${b}.${dormant.length ? ` Dormant: ${dormant.map(id => skill(id)?.name).join(', ')}` : ''}`)
-    await setMood($, 'down', now)
+    await setMood($, 'hit', now, Math.min(-1, delta))
   } else if (delta >= 20) await setMood($, 'up', now)
-  else if (delta < 0) await setMood($, 'down', now)
+  else if (delta < 0) {
+    $.ui.toast(`💥 Ouch! ${delta} XP`)
+    await setMood($, 'hit', now, delta)
+  }
   return s
 }
 
-async function setMood($: $T, mood: Mood, now: number) {
-  look = { ...look, mood, moodAt: now }
-  await update($, sessionA, ss => ({ ...ss, mood, moodAt: now }))
+async function setMood($: $T, mood: Mood, now: number, dmg = 0) {
+  look = { ...look, mood, moodAt: now, dmg }
+  await update($, sessionA, ss => ({ ...ss, mood, moodAt: now, dmg }))
 }
 
 // ── module ────────────────────────────────────────────────────────────────
@@ -150,12 +170,19 @@ export const register: Register = on => {
     })
     $.clock.every(FRAME_MS, () => {
       frame += 1
-      if (!paneLive) return
       void (async () => {
-        const mood = moodNow(await $.clock.now())
-        const tab = await read($, tabA)
-        if (tab !== 'hero') return
-        const r = await $.ui.blit({ requestId: PANE, key: 'hero', ...heroScene(look.cls, mood, frame).cells() })
+        const now = await $.clock.now()
+        const { mood, t } = moodNow(now)
+        // The band's XP bar flashes and drains the lost XP, pane open or not.
+        const sinceHit = look.mood === 'hit' ? Math.floor((now - look.moodAt) / FRAME_MS) : -1
+        if (bandRequest && sinceHit >= 0 && sinceHit <= HIT_FRAMES + 2) {
+          const s = await read($, saveA)
+          const lv = levelOf(s.xp)
+          await $.ui.blit({ requestId: bandRequest!, key: 'xpbar', ...barCells(lv.into / lv.need, 20, 0x8b5cf6, 0xf472b6, frame, lostShare(s.xp, sinceHit)) })
+        }
+        if (!paneLive) return
+        if ((await read($, tabA)) !== 'hero') return
+        const r = await $.ui.blit({ requestId: PANE, key: 'hero', ...heroScene(look.cls, mood, frame, { t, dmg: look.dmg }).cells() })
         if ('deny' in r && r.deny) { paneLive = false; return }
         if (look.rank) await $.ui.blit({ requestId: PANE, key: 'badge', ...rankBadge(look.rank, frame).cells() })
         if (look.bar !== null) await $.ui.blit({ requestId: PANE, key: 'xpbar', ...barCells(look.bar, 24, 0x8b5cf6, 0xf472b6, frame) })
@@ -346,6 +373,8 @@ export const register: Register = on => {
     const ratio = total && last ? Math.round((last.cacheRead / total) * 100) : 0
     const els = $.ui.resolve(e) as Record<string, any>
     const Raster = e.surface === 'terminal' ? els.Raster : undefined
+    if (Raster && e.requestId) bandRequest = e.requestId
+    const hitNow = moodNow(await $.clock.now())
     return (
       <Box flexDirection="column">
         <Box gap={1}>
@@ -353,7 +382,7 @@ export const register: Register = on => {
           <Text color="#ffd166" bold>Lv {lv.level}</Text>
           <Text>{titleOf(lv.level)} {className(cls)}</Text>
           {Raster
-            ? <Raster key="xpbar" {...barCells(lv.into / lv.need, 20, 0x8b5cf6, 0xf472b6)} />
+            ? <Raster key="xpbar" {...barCells(lv.into / lv.need, 20, 0x8b5cf6, 0xf472b6, frame, hitNow.mood === 'hit' ? lostShare(s.xp, hitNow.t) : 0)} />
             : <Text color="#a78bfa">{textBar(lv.into, lv.need)}</Text>}
           <Text dimColor>{lv.into}/{lv.need} XP</Text>
           {pts > 0 && <Text color="#fde047" bold>+{pts} skill point{pts > 1 ? 's' : ''}: /quest skills</Text>}
@@ -396,7 +425,7 @@ export const register: Register = on => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const width = e.props.bodyColumns
     const terminal = e.surface === 'terminal'
-    look = { ...look, cls: heroClass(s), mood: ss.mood, moodAt: ss.moodAt, rank: ss.last?.grade?.rank ?? look.rank, bar: levelOf(s.xp).into / levelOf(s.xp).need }
+    look = { ...look, cls: heroClass(s), mood: ss.mood, moodAt: ss.moodAt, dmg: ss.dmg ?? look.dmg, rank: ss.last?.grade?.rank ?? look.rank, bar: levelOf(s.xp).into / levelOf(s.xp).need }
     paneLive = terminal
 
     const tabs: [Tab, string][] = [['hero', 'Hero'], ['skills', 'Skills'], ['quests', 'Quests'], ['lore', 'Lore']]
@@ -437,7 +466,7 @@ async function heroTab($: $T, e: RenderE, s: Save, ss: Session, width: number, t
   const lv = levelOf(s.xp)
   const cls = heroClass(s)
   const now = await $.clock.now()
-  const mood = moodNow(now)
+  const { mood, t: hitT } = moodNow(now)
   const st = s.stats
   const inAll = st.inTok + st.cacheRead + st.cacheWrite
   const hit = inAll ? Math.round((st.cacheRead / inAll) * 100) : 0
@@ -469,11 +498,12 @@ async function heroTab($: $T, e: RenderE, s: Save, ss: Session, width: number, t
       </Box>
       {dormant.length > 0 && <Text color="#ff9f43">💤 Dormant: {dormant.map(id => skill(id)?.name).join(', ')}</Text>}
       {mood === 'up' && <Text color="#fde047" bold>✨ Your hero is triumphant!</Text>}
+      {mood === 'hit' && <Text color="#ff5f5f" bold>💥 Ouch! Your hero took a hit ({look.dmg} XP).</Text>}
       {mood === 'down' && <Text color="#93c5fd" bold>🌧 Your hero is downcast… sharpen the next prompt.</Text>}
     </Box>
   )
 
-  const scene = heroScene(cls, mood, frame).cells()
+  const scene = heroScene(cls, mood, frame, { t: hitT, dmg: look.dmg }).cells()
   const art = Raster ? <Raster key="hero" {...scene} /> : null
   const wide = width >= scene.columns + 30
 

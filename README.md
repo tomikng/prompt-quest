@@ -27,7 +27,7 @@ Most wasted tokens come from vague prompts: Claude has to search for the file yo
 - 💡 **Tips built from what actually happened.** "Next time point to `src/auth.ts` directly. Claude made 6 reads to find it."
 - 🪙 **Token sense.** Cache hits, lean replies and a session budget, shown live above your prompt.
 - 📜 **AI lore.** 24 cards with quizzes, from tokens and caching to RLHF, Constitutional AI, MoE and interpretability.
-- 🎨 **Animated pixel art.** Your hero cheers when you level up and sulks in the rain when you level down.
+- 🎨 **Animated pixel art.** Your hero cheers when you level up, takes a fireball when a prompt ranks badly, and sulks in the rain after.
 
 ## See it
 
@@ -45,7 +45,7 @@ Most wasted tokens come from vague prompts: Claude has to search for the file yo
 
 <table>
 <tr>
-<td width="50%" align="center"><img src="assets/hero.gif" alt="Hero animation: idle, level up, level down" width="320"><br><sub>Idle → level up ✨ → level down 🌧</sub></td>
+<td width="50%" align="center"><img src="assets/hero.gif" alt="Hero animation: idle, level up, level down" width="320"><br><sub>Idle → level up ✨ → hit by a bad prompt 💥 → downcast 🌧</sub></td>
 <td width="50%" align="center"><img src="assets/ranks.gif" alt="Animated rank badges S A B C D F" width="400"><br><sub>Rank badges S · A · B · C · D · F</sub></td>
 </tr>
 </table>
@@ -86,7 +86,7 @@ Each prompt you type is graded on your machine with simple heuristics. No model 
 | --- | --- | --- | --- | --- | --- | --- |
 | XP | +30 | +20 | +10 | 0 | −10 | −20 |
 
-**Questions are graded differently.** You ask because you don't know, so a question is never penalized for not naming a file, a reason or a finish line. A clear question is 💎 B (+10), and one grounded in a file, an error or a screenshot is ⭐ A (+20). Short replies like "yes" or "continue" are neutral.
+**Questions are graded differently.** You ask because you don't know, so a question is never penalized for not naming a file, a reason or a finish line. A clear question is 💎 B (+10), and one grounded in a file, an error or a screenshot is ⭐ A (+20). Replies to Claude like "yes", "yes push them" or "no, keep it" are neutral.
 
 ### Turn bonuses
 

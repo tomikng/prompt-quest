@@ -78,7 +78,10 @@ const grey = (c: Px): Px => {
 // ── Hero scene ────────────────────────────────────────────────────────────
 
 export type HeroClass = 'novice' | 'scribe' | 'alchemist' | 'sage'
-export type Mood = 'idle' | 'up' | 'down'
+export type Mood = 'idle' | 'up' | 'down' | 'hit'
+
+/** How many animation frames a hit lasts before the hero turns downcast. */
+export const HIT_FRAMES = 16
 
 const HERO = [
   '....HHHH....',
@@ -141,15 +144,18 @@ const STARS = Array.from({ length: 14 }, (_, i) => ({
 }))
 const FLOWERS = [3, 9, 15, 24, 30]
 
-export function heroScene(cls: HeroClass, mood: Mood, f: number): Canvas {
+export function heroScene(cls: HeroClass, mood: Mood, f: number, hit?: { t: number; dmg: number }): Canvas {
   const W = 34, H = 30
   const cv = new Canvas(W, H)
   const ground = H - 5
+  const t = mood === 'hit' ? (hit?.t ?? 0) : -1
+  const impact = t >= 4 && t <= 5
   // sky gradient
-  const top = mood === 'down' ? 0x1f2430 : 0x1b1340
-  const bot = mood === 'down' ? 0x4b5563 : mood === 'up' ? 0xf59e0b : 0x3b5bdb
+  const top = mood === 'down' ? 0x1f2430 : t >= 4 ? 0x3b1020 : 0x1b1340
+  const bot = mood === 'down' ? 0x4b5563 : mood === 'up' ? 0xf59e0b : t >= 4 ? 0x7f1d1d : 0x3b5bdb
   for (let y = 0; y < ground; y++) {
-    const c = mix(top, bot, y / ground)
+    let c = mix(top, bot, y / ground)
+    if (impact) c = mix(c, t === 4 ? 0xffffff : 0xef4444, 0.45)
     for (let x = 0; x < W; x++) cv.set(x, y, c)
   }
   // stars or moon
@@ -173,7 +179,8 @@ export function heroScene(cls: HeroClass, mood: Mood, f: number): Canvas {
   // hero
   const jump = mood === 'up' ? [0, -2, -3, -2, 0, 0][f % 6]! : 0
   const bob = mood === 'idle' && f % 8 >= 4 ? 1 : 0
-  const hx = 9, hy = ground - 18 + jump + bob
+  const knock = t >= 4 ? ([-3, -2, -2, -1, -1][t - 4] ?? 0) : 0
+  const hx = 9 + knock, hy = ground - 18 + jump + bob + (t === 4 || t === 5 ? 1 : 0)
   const robe = ROBES[cls]
   const blink = f % 20 === 0
   const pal: Record<string, Px> = {
@@ -181,6 +188,11 @@ export function heroScene(cls: HeroClass, mood: Mood, f: number): Canvas {
     R: robe.R, r: robe.r, T: robe.T, B: 0x3f2a14, K: 0x292524,
   }
   if (mood === 'down') for (const k of ['R', 'r', 'T', 'H']) pal[k] = grey(pal[k]!)
+  if (t >= 4 && t < 10) {
+    pal.E = 0xdc2626
+    pal.p = 0x450a0a
+    if (t % 2 === 0) for (const k of ['R', 'r', 'T', 'H', 'S']) pal[k] = mix(pal[k]!, 0xef4444, 0.6)
+  }
   // soft shadow
   for (let x = hx + 1; x < hx + 11; x++) cv.set(x, ground, 0x15803d)
   cv.sprite(HERO, hx, hy, pal)
@@ -195,6 +207,8 @@ export function heroScene(cls: HeroClass, mood: Mood, f: number): Canvas {
       const y = Math.round(hy + 8 + Math.sin(a) * 9)
       cv.set(x, y, i % 2 ? 0xfde047 : 0xffffff)
     }
+  } else if (mood === 'hit') {
+    drawHit(cv, t, hx, hy, W, hit?.dmg ?? 0)
   } else if (mood === 'down') {
     // rain cloud and drops
     cv.sprite(['..CCCC..', '.CCCCCCC', 'CCCCCCCC'], hx + 2, Math.max(0, hy - 7), { C: 0x6b7280 })
@@ -204,6 +218,49 @@ export function heroScene(cls: HeroClass, mood: Mood, f: number): Canvas {
     }
   }
   return cv
+}
+
+const DIGITS: Record<string, string[]> = {
+  '0': ['###', '#.#', '#.#', '#.#', '###'], '1': ['.#.', '##.', '.#.', '.#.', '###'],
+  '2': ['###', '..#', '###', '#..', '###'], '3': ['###', '..#', '.##', '..#', '###'],
+  '4': ['#.#', '#.#', '###', '..#', '..#'], '5': ['###', '#..', '###', '..#', '###'],
+  '6': ['###', '#..', '###', '#.#', '###'], '7': ['###', '..#', '.#.', '.#.', '.#.'],
+  '8': ['###', '#.#', '###', '#.#', '###'], '9': ['###', '#.#', '###', '..#', '###'],
+  '-': ['...', '...', '###', '...', '...'],
+}
+
+/** Pixel text with a 1px dark outline so it reads on any sky. */
+function pixelText(cv: Canvas, text: string, x: number, y: number, color: Px) {
+  const glyphs = [...text].map(ch => DIGITS[ch] ?? DIGITS['-']!)
+  const draw = (dx: number, dy: number, c: Px) =>
+    glyphs.forEach((g, i) => cv.sprite(g, x + i * 4 + dx, y + dy, { '#': c }))
+  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) draw(dx, dy, 0x1a0505)
+  draw(0, 0, color)
+}
+
+function drawHit(cv: Canvas, t: number, hx: number, hy: number, W: number, dmg: number) {
+  const chestX = hx + 11, chestY = hy + 10
+  if (t < 4) {
+    // a fireball streaks in from the right
+    const x = Math.round(W - 2 - (t / 4) * (W - 2 - chestX))
+    cv.sprite(['..oO.', 'ooOYO', '..oO.'], x, chestY - 1, { o: 0xf97316, O: 0xef4444, Y: 0xfde047 })
+    for (let i = 1; i <= 3; i++) cv.set(x + 4 + i, chestY, mix(0xf97316, 0x1b1340, i / 4))
+  } else if (t < 7) {
+    // impact burst
+    const r = t - 3
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4
+      cv.set(Math.round(chestX + Math.cos(a) * r * 2), Math.round(chestY + Math.sin(a) * r * 2), i % 2 ? 0xfde047 : 0xffffff)
+    }
+    cv.sprite(['.Y.', 'YWY', '.Y.'], chestX - 1, chestY - 1, { Y: 0xfde047, W: 0xffffff })
+  }
+  if (t >= 4 && dmg < 0) {
+    // floating damage number, fading out
+    const rise = Math.floor((t - 4) / 2)
+    const fade = t >= 13 ? (t - 12) / 4 : 0
+    const label = String(dmg)
+    pixelText(cv, label, Math.max(1, hx + 6 - label.length * 2), Math.max(1, hy - 3 - rise), mix(0xff3b3b, 0x7f1d1d, fade))
+  }
 }
 
 // ── Rank badges ───────────────────────────────────────────────────────────
@@ -261,15 +318,20 @@ export const RANK_GLYPH: Record<Rank, string> = { S: '👑', A: '⭐', B: '💎'
 
 // ── Glossy gradient bar (XP, quests) ──────────────────────────────────────
 
-export function barCells(frac: number, width: number, from: Px, to: Px, f = 0) {
+export function barCells(frac: number, width: number, from: Px, to: Px, f = 0, lost = 0) {
   const cv = new Canvas(width, 2)
   const filled = Math.round(Math.max(0, Math.min(1, frac)) * width)
+  const lostTo = Math.min(width, filled + Math.round(Math.max(0, lost) * width))
   const glint = filled > 2 ? f % (filled + 8) : -1
   for (let x = 0; x < width; x++) {
     if (x < filled) {
       let c = mix(from, to, width > 1 ? x / (width - 1) : 0)
       if (x === glint) c = mix(c, 0xffffff, 0.6)
       cv.set(x, 0, mix(c, 0xffffff, 0.3))
+      cv.set(x, 1, c)
+    } else if (x < lostTo) {
+      const c = f % 2 ? 0xef4444 : 0xfca5a5
+      cv.set(x, 0, mix(c, 0xffffff, 0.2))
       cv.set(x, 1, c)
     } else {
       cv.set(x, 0, 0x3a3a52)

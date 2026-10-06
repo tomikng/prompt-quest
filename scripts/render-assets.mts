@@ -26,9 +26,9 @@ function ppm(name: string, layers: { cv: Cv; x: number; y: number }[], w: number
 
 // Hero: idle → level up → level down, sage
 let n = 0
-for (const [mood, frames] of [['idle', 16], ['up', 12], ['down', 12], ['idle', 8]] as const) {
+for (const [mood, frames] of [['idle', 12], ['up', 12], ['idle', 4], ['hit', 16], ['down', 10], ['idle', 4]] as const) {
   for (let f = 0; f < frames; f++) {
-    const cv = heroScene('sage', mood, n)
+    const cv = heroScene('sage', mood, n, { t: f, dmg: -20 })
     ppm(`hero-${String(n).padStart(3, '0')}`, [{ cv, x: 0, y: 0 }], cv.w, cv.h)
     n++
   }

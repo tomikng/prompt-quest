@@ -105,7 +105,9 @@ export const RANK_COLOR: Record<Rank, string> = {
 }
 
 const QUESTION = /\?\s*$|^(where|what|how|why|when|who|which|is|are|can|could|do|does|did|should|would|will|whats|what's|wheres|where's)\b/i
-const ACK = /^(y|yes|yep|ok|okay|sure|go|go ahead|continue|proceed|do it|thanks|thank you|ty|no|nope|lgtm|ship it)[.!]*$/i
+const ACK = /^(y|yes|yeah|yep|yup|ok|okay|sure|go|go ahead|continue|proceed|do it|thanks|thank you|ty|no|nope|nah|lgtm|ship it|please|sounds good|perfect|great|cool|nice|agreed|correct|right|exactly)\b/i
+/** Answers to a question Claude asked: "yes push them", "no, keep it", "ok do that". Judged neutral. */
+const isReply = (t: string, words: number) => words <= 8 && ACK.test(t) && !/\?\s*$/.test(t)
 const VAGUE = /\b(fix (it|this)|doesn'?t work|not working|make it better|do something|it'?s broken|help)\b/i
 const ANCHOR = /`[^`]+`|(^|\s)[\w.-]*\/[\w./-]+|\b[\w-]+\.(ts|tsx|js|py|rs|go|md|json|lua|sh|toml|yaml|yml|css|html|c|cpp|h)\b|\b\w+\(\)|:\d+\b|https?:\/\//
 const PURPOSE = /\b(because|so that|goal|in order to|i need|i want|the aim|the point is|ideally)\b/i
@@ -124,9 +126,9 @@ export function grade(text: string, attachments = 0): Grade {
   const hasImage = attachments > 0 || /\[Image #\d+\]/.test(text)
   const t = text.replace(/\[Image #\d+\]/g, '').trim()
   const words = t.split(/\s+/).filter(Boolean).length
-  if (ACK.test(t) && !hasImage) {
-    const tip = 'Short replies are fine when steering. No XP gained or lost.'
-    return { rank: 'C', xp: 0, reasons: ['quick reply'], tip, tips: [tip], missing: [], upgrade: null }
+  if (isReply(t, words) && !hasImage) {
+    const tip = 'Replies like this are fine when answering Claude. No XP gained or lost.'
+    return { rank: 'C', xp: 0, reasons: ['reply to Claude'], tip, tips: [tip], missing: [], upgrade: null }
   }
   // Questions are judged on clarity, not on file/why/done: you ask because you don't know.
   if (QUESTION.test(t) && words <= 80) {
