@@ -47,6 +47,8 @@ export type Save = {
   custom: Card[]
   budget: number
   showBand: boolean
+  /** Day feedback last earned XP (once a day). */
+  feedbackDay?: string
   log: string[]
 }
 
@@ -55,6 +57,8 @@ export type Session = {
   alerts: number[]
   lastTurnAt: number
   last: {
+    /** The prompt as typed; session-only, never written to the store. */
+    prompt?: string
     grade: Grade | null
     xp: number
     notes: string[]

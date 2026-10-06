@@ -1,0 +1,16 @@
+name: 💡 Idea
+description: Suggest a skill, quest, lore card, tip or anything else.
+title: "Idea: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What would it help you do better?
+      placeholder: "Spend fewer tokens on …, understand … faster, learn about …"

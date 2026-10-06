@@ -135,13 +135,26 @@ Your class (and your hero's look) follows the branch you've invested in most.
 | `/quest band` | Show or hide the status band above the prompt |
 | `/quest budget 50k` | Set the session output-token budget (Budget Ward) |
 | `/quest oracle <topic>` | New lore card via a small Haiku call (Oracle's Eye) |
+| `/quest feedback [--prompt] <why>` | Report a rank that felt wrong (opens a pre-filled GitHub issue) |
+| `/quest idea <text>` | Suggest an improvement |
 | `/quest reset confirm` | Start over at level 1 |
+
+## Feedback makes it smarter
+
+The grading rules are simple heuristics, and they improve through your reports. If a rank feels wrong, press **Report** under *Last prompt* in the Hero tab, or run `/quest feedback <why>`.
+
+- A **pre-filled GitHub issue** opens in your browser with the rank, the signals the grader saw and your comment. Nothing is sent until you press **Submit**.
+- Your prompt text is included **only** if you choose *Report with my prompt* (or `--prompt`).
+- Your first report each day earns **+10 XP**.
+
+Ideas go through `/quest idea <text>`. All reports land in [Issues](https://github.com/tomikng/prompt-quest/issues), labeled `rank-feedback`, `enhancement` or `bug`.
 
 ## Privacy
 
 - Prompt grading and tips run locally, with no network calls.
 - Progress is saved in the plugin's own store, a JSON file under `~/.claude/plugins/store/`.
 - The only model call is the optional `/quest oracle`, which uses a few hundred Haiku tokens.
+- Feedback only opens a browser link. You review and submit the issue yourself.
 
 ## FAQ
 

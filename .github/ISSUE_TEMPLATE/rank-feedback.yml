@@ -1,0 +1,41 @@
+name: 🎯 Rank feedback
+description: A prompt got a rank that felt wrong. These reports tune the grading rules.
+title: "Rank felt wrong"
+labels: ["rank-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! `/quest feedback` and the **Report** button in the pane fill this in for you.
+        Only what you see below is sent. Edit anything you don't want to share.
+  - type: input
+    id: rank
+    attributes:
+      label: Rank you got
+      placeholder: "D"
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: Rank you expected
+      placeholder: "B"
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it feel wrong?
+      placeholder: "It was a question. I didn't know the file, that's why I asked."
+    validations:
+      required: true
+  - type: textarea
+    id: prompt
+    attributes:
+      label: The prompt (optional)
+      description: Only included if you chose "Report with my prompt". Remove anything private.
+      render: text
+  - type: textarea
+    id: details
+    attributes:
+      label: Grading details
+      description: Filled in by the plugin. These are the signals the grader saw.
+      render: text

@@ -137,6 +137,7 @@ async function setMood($: $T, mood: Mood, now: number) {
 
 export const register: Register = on => {
   let pending: Grade | null = null
+  let pendingText = ''
   let tools = 0
   let trace = emptyTrace()
 
@@ -145,7 +146,7 @@ export const register: Register = on => {
     if (stored) await update($, saveA, () => ({ ...FRESH, ...stored, stats: { ...FRESH.stats, ...stored.stats } }))
     await $.command.register({
       name: 'quest',
-      description: 'Prompt Quest: hero, skills, quests, lore · /quest [skills|quests|lore|close|band|budget <n>|oracle <topic>]',
+      description: 'Prompt Quest: hero, skills, quests, lore · /quest [skills|quests|lore|close|band|budget <n>|oracle <topic>|feedback [--prompt] <why>|idea <text>]',
     })
     $.clock.every(FRAME_MS, () => {
       frame += 1
@@ -169,6 +170,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     const g = grade(e.text, e.attachments?.length ?? 0)
     pending = g
+    pendingText = e.text
     tools = 0
     trace = emptyTrace()
     const today = dayOf(now)
@@ -254,7 +256,7 @@ export const register: Register = on => {
       lastTurnAt: now,
       outTok: cur.outTok + (u?.output_tokens ?? 0),
       last: {
-        grade: g, xp: delta, notes,
+        prompt: g ? pendingText : undefined, grade: g, xp: delta, notes,
         tips: [...(g && g.rank !== 'S' ? g.tips : []), ...spendTips],
         inTok: u?.input_tokens ?? 0, outTok: u?.output_tokens ?? 0,
         cacheRead: u?.cache_read_input_tokens ?? 0, cacheWrite: u?.cache_creation_input_tokens ?? 0,
@@ -312,6 +314,10 @@ export const register: Register = on => {
       return { text: `Session output budget set to ${k(n)} tokens.` }
     }
     if (sub === 'oracle') return oracle($, arg, open)
+    if (sub === 'feedback' || sub === 'idea') {
+      const withPrompt = /(^|\s)--prompt\b/.test(arg)
+      return report($, sub === 'idea' ? 'idea' : 'rank', arg.replace(/(^|\s)--prompt\b/, '').trim(), withPrompt)
+    }
     if (sub === 'reset' && arg === 'confirm') {
       await commit($, () => FRESH)
       return { text: 'Your hero was reborn at level 1.' }
@@ -425,7 +431,7 @@ export const register: Register = on => {
 type RenderE = Parameters<EngineInterface['ui']['resolve']>[0]
 
 async function heroTab($: $T, e: RenderE, s: Save, ss: Session, width: number, terminal: boolean) {
-  const { Box, Text } = $.ui.resolve(e)
+  const { Box, Text, Button } = $.ui.resolve(e)
   const els = $.ui.resolve(e) as Record<string, any>
   const Raster = terminal ? els.Raster : undefined
   const lv = levelOf(s.xp)
@@ -481,6 +487,11 @@ async function heroTab($: $T, e: RenderE, s: Save, ss: Session, width: number, t
         {(ss.last.tips ?? []).length > 0 && <Text bold color="#5fb3ff">How to improve</Text>}
         {(ss.last.tips ?? []).map(t => <Text>💡 {t}</Text>)}
         {g.upgrade && <Text color="#5fff87">✏️ Try: <Text italic>{g.upgrade}</Text></Text>}
+        <Box gap={1} marginTop={1}>
+          <Text dimColor>Rank feel wrong?</Text>
+          <Button key="report" label="Report" hotkey="r" onPress={() => report($, 'rank', '', false)} />
+          <Button key="report-prompt" label="Report with my prompt" onPress={() => report($, 'rank', '', true)} />
+        </Box>
       </Box>
     </Box>
   ) : (
@@ -676,4 +687,53 @@ async function oracle($: $T, topic: string, open: (t: Tab) => Promise<void>) {
   } catch {
     return { text: 'The Oracle mumbled something unreadable. Try another topic.' }
   }
+}
+
+// ── Feedback: a pre-filled GitHub issue the person reviews and submits ────
+
+const REPO = 'https://github.com/tomikng/prompt-quest'
+
+async function report($: $T, kind: 'rank' | 'idea', comment: string, withPrompt: boolean) {
+  const ss = await read($, sessionA)
+  const last = ss.last
+  const g = last?.grade
+  const version = await $.session.version().then(v => v.version).catch(() => 'unknown')
+  const params = new URLSearchParams()
+  if (kind === 'idea') {
+    params.set('template', 'idea.yml')
+    params.set('title', `Idea: ${comment.slice(0, 60) || '…'}`)
+    if (comment) params.set('idea', comment)
+  } else {
+    if (!g || !last) return { text: 'No graded prompt yet. Send a prompt first, then report its rank.' }
+    params.set('template', 'rank-feedback.yml')
+    params.set('title', `Rank ${g.rank} felt wrong${comment ? `: ${comment.slice(0, 50)}` : ''}`)
+    params.set('rank', g.rank)
+    params.set('details', [
+      `Rank: ${g.rank} (${g.xp >= 0 ? '+' : ''}${g.xp} XP), turn total ${last.xp >= 0 ? '+' : ''}${last.xp} XP`,
+      `Signals: ${g.reasons.join(', ') || 'none'}`,
+      `Missing: ${(g.missing ?? []).join(', ') || 'none'}`,
+      `Notes: ${last.notes.join(', ')}`,
+      `Words: ${(last.prompt ?? '').split(/\s+/).filter(Boolean).length}`,
+      `Plugin 0.2.0 · Claude Code ${version}`,
+    ].join('\n'))
+    if (comment) params.set('why', comment)
+    if (withPrompt && last.prompt) params.set('prompt', last.prompt.slice(0, 1500))
+  }
+  const url = `${REPO}/issues/new?${params.toString().replace(/\+/g, '%20')}`
+  let opened = false
+  for (const argv of [['xdg-open', url], ['open', url]]) {
+    try {
+      const r = await $.process.run(argv, { timeoutMs: 5000 })
+      if (r.exitCode === 0) { opened = true; break }
+    } catch { /* not this platform */ }
+  }
+  const today = dayOf(await $.clock.now())
+  const s = await read($, saveA)
+  if (s.feedbackDay !== today) {
+    await commit($, cur => ({ ...cur, feedbackDay: today }))
+    await award($, 10, kind === 'idea' ? 'Shared an idea' : 'Reported a rank')
+  }
+  $.ui.toast(opened ? '🐞 Opened a pre-filled issue in your browser. Review it and press Submit.' : '🐞 Issue link ready (see the transcript).')
+  const privacy = kind === 'rank' ? (withPrompt ? ' Your prompt text is included; edit it out if you like.' : ' Your prompt text is NOT included.') : ''
+  return { text: `${opened ? 'Opened' : 'Open this link to file it'}: ${url}\nNothing is sent until you press Submit on GitHub.${privacy}` }
 }
