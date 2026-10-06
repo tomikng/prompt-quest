@@ -1,6 +1,6 @@
 {
   "name": "prompt-quest",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "An RPG layer for Claude Code: earn XP from sharp prompts and lean token use, spend skill points on perks, and learn AI lore.",
   "author": { "name": "tomikng", "url": "https://github.com/tomikng" },
   "homepage": "https://github.com/tomikng/prompt-quest",

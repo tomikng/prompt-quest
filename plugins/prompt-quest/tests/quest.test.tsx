@@ -90,6 +90,11 @@ describe('prompt ranks', () => {
     expect(grade('Yes push them').xp).toBe(0)
     expect(grade('yes push them').upgrade).toBe(null)
     expect(grade('no, keep the old name').xp).toBe(0)
+    expect(grade('yeas pls').mode).toBe('reply')
+    expect(grade('yse do it').mode).toBe('reply')
+    expect(grade('next one', 0, { recent: true, files: [] }).xp).toBe(0)
+    expect(grade('fix it', 0, { recent: true, files: [] }).xp).toBe(0)
+    expect(grade('yesterday the build broke in ci.yml').mode).toBe('task')
   })
   test('losing XP can drop a level', async () => {
     expect(levelOf(110).level).toBe(2)

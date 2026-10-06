@@ -7,7 +7,7 @@
 **An RPG layer for [Claude Code](https://claude.com/claude-code).**
 Level up by writing sharper prompts, spending tokens wisely and learning how modern AI works.
 
-[![Version](https://img.shields.io/badge/version-0.4.0-8b5cf6)](.claude-plugin/marketplace.json)
+[![Version](https://img.shields.io/badge/version-0.4.1-8b5cf6)](.claude-plugin/marketplace.json)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-%E2%89%A5%202.1.289-d97757)](https://claude.com/claude-code)
 [![License: MIT](https://img.shields.io/github/license/tomikng/prompt-quest?color=22c55e)](LICENSE)
 [![Grading cost](https://img.shields.io/badge/prompt%20grading-0%20tokens-38bdf8)](#privacy)
@@ -137,7 +137,7 @@ Each prompt you type is graded on your machine with simple heuristics. No model 
 
 S takes the habits that make agentic work go well: verification, scope, a plan or an example. Follow-ups like "now do the same for signup" aren't punished for not repeating context.
 
-**Questions are graded differently.** You ask because you don't know, so a question is never penalized for not naming a file, a reason or a finish line. A clear question is 💎 B (+10), and one grounded in a file, an error or a screenshot is ⭐ A (+20). Replies to Claude like "yes", "yes push them" or "no, keep it" are neutral.
+**Questions are graded differently.** You ask because you don't know, so a question is never penalized for not naming a file, a reason or a finish line. A clear question is 💎 B (+10), and one grounded in a file, an error or a screenshot is ⭐ A (+20). Replies to Claude ("yes push them", even "yeas pls") and 1–3 word steering right after a turn are neutral.
 
 **`/quest rules`** shows all of this visually, with your last prompt broken down signal by signal:
 

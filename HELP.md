@@ -42,10 +42,12 @@ You start as a level 1 **Apprentice Wanderer** with one skill point. Work as usu
 
 Ranking happens on your machine with simple rules. No model call is made and no tokens are spent. Each prompt is first sorted into one of three kinds.
 
-### 1. Replies to Claude: always neutral
+### 1. Replies and short steering: always neutral
 
-A short message (up to 8 words) that starts with *yes, no, ok, sure, go ahead, sounds good…* and isn't a question.
-Examples: `yes`, `yes push them`, `no, keep the old name`.
+- **Replies:** a message of up to 8 words that starts with *yes, no, ok, sure, please, let's do it, sounds good…* and isn't a question. One-letter typos count too: `yeas pls`, `yse`, `oka`.
+- **Short steering:** right after a turn, any message of 1–3 words (`next`, `go on`, `fix it`).
+
+Examples: `yes`, `yes push them`, `yeas pls`, `no, keep the old name`.
 → **Rank C, 0 XP, no tips.** Steering Claude is never punished.
 
 ### 2. Questions: judged on clarity
@@ -95,7 +97,7 @@ Then the points map to a rank:
 | Prompt | Signals | Points | Rank |
 | --- | --- | --- | --- |
 | `fix it` (new session) | vague and tiny | −2 | 💀 F (−20) |
-| `fix it` (right after a turn) | follow-up | 1 | ⚪ C (0) |
+| `fix it` (right after a turn) | short steer | — | ⚪ C (0) |
 | `login is broken` | too terse (3 words) | −1 | 💀 F (−20) |
 | `fix the login bug in src/auth.ts` | concrete | 2 | 💎 B (+10) |
 | `now do the same for the signup page, tests should pass` (mid-session) | follow-up, done, verifiable | 3 | ⭐ A (+20) |

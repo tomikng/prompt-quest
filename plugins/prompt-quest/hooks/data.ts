@@ -106,8 +106,36 @@ export const RANK_COLOR: Record<Rank, string> = {
 
 const QUESTION = /\?\s*$|^(where|what|how|why|when|who|which|is|are|can|could|do|does|did|should|would|will|whats|what's|wheres|where's)\b/i
 const ACK = /^(let'?s (do it|go)|lets (do it|go)|y|yes|yeah|yep|yup|ok|okay|sure|go|go ahead|continue|proceed|do it|thanks|thank you|ty|no|nope|nah|lgtm|ship it|please|sounds good|perfect|great|cool|nice|agreed|correct|right|exactly)\b/i
-/** Answers to a question Claude asked: "yes push them", "no, keep it", "ok do that". Judged neutral. */
-const isReply = (t: string, words: number) => words <= 8 && ACK.test(t) && !/\?\s*$/.test(t)
+const ACK_WORDS = ['yes', 'yeah', 'yep', 'yup', 'ok', 'okay', 'sure', 'no', 'nope', 'nah', 'please', 'pls', 'plz', 'thanks', 'go', 'continue', 'proceed', 'lgtm', 'agreed', 'correct', 'right', 'exactly', 'perfect', 'great', 'cool', 'nice', 'k', 'kk', 'ye', 'ya', 'yea', 'yas', 'yess']
+
+const REAL_WORDS = ['now', 'not', 'new', 'yet', 'yes', 'see', 'set', 'use', 'got', 'god', 'ten', 'one', 'sun', 'sire', 'pure', 'cure', 'go', 'do', 'to', 'so', 'on', 'or', 'nice', 'rice', 'gone', 'nose', 'note', 'okra', 'pleas', 'cool', 'pool', 'tool']
+
+/** Edit distance ≤ 1 (one typo), for short words like "yeas", "yse", "oka". */
+function oneTypo(a: string, b: string) {
+  if (a === b) return true
+  if (Math.abs(a.length - b.length) > 1 || Math.min(a.length, b.length) < 2) return false
+  let i = 0, j = 0, edits = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue }
+    if (++edits > 1) return false
+    if (a.length > b.length) i++
+    else if (b.length > a.length) j++
+    else if (a[i + 1] === b[j] && a[i] === b[j + 1]) { i += 2; j += 2 } // swapped letters
+    else { i++; j++ }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1
+}
+
+/** Answers to a question Claude asked: "yes push them", "yeas pls", "no, keep it". Judged neutral. */
+const isReply = (t: string, words: number) => {
+  if (words > 8 || /\?\s*$/.test(t)) return false
+  if (ACK.test(t)) return true
+  const first = t.toLowerCase().split(/[\s,.!]+/)[0] ?? ''
+  if (ACK_WORDS.includes(first)) return true
+  // Typos only for 3+ letter reply words, and never for real words one letter away ("now", "yet", "not").
+  if (REAL_WORDS.includes(first)) return false
+  return ACK_WORDS.some(w => w.length >= 3 && oneTypo(first, w))
+}
 const VAGUE = /\b(fix (it|this)|doesn'?t work|not working|make it better|do something|it'?s broken|help)\b/i
 const ANCHOR = /`[^`]+`|(^|\s)[\w.-]*\/[\w./-]+|\b[\w-]+\.(ts|tsx|js|jsx|py|rs|go|md|json|lua|sh|toml|yaml|yml|css|html|c|cpp|h|java|rb|kt|swift|sql)\b|\b\w+\(\)|:\d+\b|https?:\/\/|@[\w./-]+/
 const PURPOSE = /\b(because|so that|goal|in order to|i need|i want|the aim|the point is|ideally|users? (can|can't|cannot|get|see))\b/i
@@ -148,9 +176,11 @@ export function grade(text: string, attachments = 0, ctx: GradeContext = { recen
   const hasImage = attachments > 0 || /\[Image #\d+\]/.test(text)
   const t = text.replace(/\[Image #\d+\]/g, '').trim()
   const words = t.split(/\s+/).filter(Boolean).length
-  if (isReply(t, words) && !hasImage) {
-    const tip = 'Replies like this are fine when answering Claude. No XP gained or lost.'
-    return { rank: 'C', xp: 0, reasons: ['reply to Claude'], tip, tips: [tip], missing: [], upgrade: null, mode: 'reply' }
+  // Mid-session, a 1–3 word message is steering ("next", "go on", "yeas pls"): neutral, never punished.
+  const reply = isReply(t, words)
+  if ((reply || (ctx.recent && words <= 3 && !ANCHOR.test(t))) && !hasImage) {
+    const tip = reply ? 'Replies like this are fine when answering Claude. No XP gained or lost.' : 'Short steering mid-task is fine. No XP gained or lost.'
+    return { rank: 'C', xp: 0, reasons: [reply ? 'reply to Claude' : 'short steer'], tip, tips: [], missing: [], upgrade: null, mode: 'reply' }
   }
   // Questions are judged on clarity, not on file/why/done: you ask because you don't know.
   if (QUESTION.test(t) && words <= 80) {

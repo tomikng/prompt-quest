@@ -868,7 +868,7 @@ async function report($: $T, kind: 'rank' | 'idea', comment: string, withPrompt:
       `Missing: ${(g.missing ?? []).join(', ') || 'none'}`,
       `Notes: ${last.notes.join(', ')}`,
       `Words: ${(last.prompt ?? '').split(/\s+/).filter(Boolean).length}`,
-      `Plugin 0.4.0 · Claude Code ${version}`,
+      `Plugin 0.4.1 · Claude Code ${version}`,
     ].join('\n'))
     if (comment) params.set('why', comment)
     if (withPrompt && last.prompt) params.set('prompt', last.prompt.slice(0, 1500))
