@@ -273,3 +273,65 @@ export const LORE: Card[] = [
     'Evals measure model behavior on fixed test sets: benchmarks, unit-test pass rates, or an LLM acting as judge. Watch out for contamination, where test data leaked into training.',
     'Benchmark contamination means…', ['Test items leaked into training data', 'The GPU overheated', 'A judge model was used'], 0),
 ]
+
+// ── Concrete tips from what Claude actually did this turn ─────────────────
+
+export type Trace = {
+  /** Files Claude edited or wrote, in order. */
+  edits: string[]
+  /** How often each file was read. */
+  reads: Record<string, number>
+  /** Searches: grep/rg/find/ls through Bash, Grep, Glob. */
+  searches: number
+  /** The last test/check command Claude ran, if any. */
+  check: string | null
+}
+
+export const emptyTrace = (): Trace => ({ edits: [], reads: {}, searches: 0, check: null })
+
+const SEARCH_CMD = /(^|[|;&]\s*|\s)(grep|rg|find|fd|ls|tree)\s/
+const CHECK_CMD = /\b(test|tests|pytest|jest|vitest|tsc|lint|eslint|validate|check|cargo (test|check|build)|go (test|vet)|make)\b/
+
+/** The part of a shell command worth quoting back: drop `cd …&&`, pipes and redirects. */
+export function checkOf(command: string): string | null {
+  const parts = command.split(/&&|;|\n/).map(p => p.split('|')[0]!.replace(/\s*\d?>.*$/, '').trim()).filter(Boolean)
+  const hit = parts.filter(p => !p.startsWith('cd ') && CHECK_CMD.test(p)).pop()
+  if (!hit) return null
+  return hit.length > 48 ? `${hit.slice(0, 47)}…` : hit
+}
+
+export const isSearch = (command: string) => SEARCH_CMD.test(` ${command}`)
+
+export function relPath(path: string, cwd: string, home: string) {
+  if (cwd && path.startsWith(`${cwd}/`)) return path.slice(cwd.length + 1)
+  if (home && path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`
+  return path
+}
+
+/** Swaps generic advice for advice naming the real file and the real check. */
+export function concretize(g: Grade, trace: Trace, rel: (p: string) => string): Grade {
+  const reads = Object.entries(trace.reads).sort((a, b) => b[1] - a[1])
+  const target = trace.edits[trace.edits.length - 1] ?? reads[0]?.[0]
+  const file = target ? rel(target) : null
+  const lookups = Object.values(trace.reads).reduce((a, b) => a + b, 0) + trace.searches
+  const tips = g.tips.map(t => {
+    if (t === TIP.anchor && file) {
+      const cost = lookups > 1 ? ` Claude made ${lookups} reads/searches to find it.` : ''
+      return `Next time point to \`${file}\` directly.${cost}`
+    }
+    if (t === TIP.criteria && trace.check) {
+      return `Say what done looks like, e.g. "done when \`${trace.check}\` passes". That's the check Claude ended up running.`
+    }
+    return t
+  })
+  if (g.reasons.includes('anchored to code/files') && trace.searches >= 6) {
+    tips.push(`You named a file, but Claude still ran ${trace.searches} searches. Naming the function or the line too narrows it further.`)
+  }
+  if (trace.edits.length && new Set(trace.edits).size > 3 && !g.reasons.includes('success criteria')) {
+    tips.push(`This touched ${new Set(trace.edits).size} files. Saying the scope up front ("only touch ${file ?? 'X'}") keeps changes small.`)
+  }
+  let upgrade = g.upgrade
+  if (upgrade && file) upgrade = upgrade.replace('<file/function>', `\`${file}\``)
+  if (upgrade && trace.check) upgrade = upgrade.replace('<check>', `\`${trace.check}\` passes`)
+  return { ...g, tips, upgrade, tip: tips[0] ?? g.tip }
+}

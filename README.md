@@ -3,7 +3,7 @@
 An RPG layer for [Claude Code](https://claude.com/claude-code). Get better at prompting, reading output and spending tokens, and learn how modern AI works along the way.
 
 - **Prompt ranks S–F.** Every prompt you type is graded locally (no tokens spent). S/A/B earn XP, D/F lose it. Yes, you can level *down*.
-- **Tips that teach.** Each rank comes with concrete advice and a suggested rewrite of your own prompt, plus token-spend tips from how the turn went (heavy output, cold cache, too many tool calls).
+- **Tips that teach.** Each rank comes with concrete advice built from what actually happened in the turn ("next time point to `src/auth.ts` directly, Claude made 6 reads to find it"; "done when `npm test` passes"), a rewrite of your own prompt, and token-spend tips (heavy output, cold cache, too many tool calls).
 - **Skill tree.** One point per level across three branches:
   - 🪶 **Scribe** (read output better): TL;DR line, inline glossary, why-before-what, answer-first
   - 🧪 **Alchemist** (spend tokens wisely): token ledger, cold-cache warnings, terse mode, session budget

@@ -6,7 +6,7 @@ import { barCells, heroScene, rankBadge, RANK_GLYPH } from './art'
 import type { HeroClass, Mood } from './art'
 import {
   BRANCHES, LORE, PROMPT_TIPS, QUEST_XP, SKILLS,
-  grade, levelOf, questsFor, RANK_COLOR, skill, titleOf, turnTips,
+  checkOf, concretize, emptyTrace, grade, isSearch, levelOf, questsFor, RANK_COLOR, relPath, skill, titleOf, turnTips,
 } from './data'
 
 const PANE = 'prompt-quest'
@@ -137,6 +137,7 @@ async function setMood($: $T, mood: Mood, now: number) {
 export const register: Register = on => {
   let pending: Grade | null = null
   let tools = 0
+  let trace = emptyTrace()
 
   on('session.start', async ($, e, next) => {
     const stored = (await $.store.get('save')) as Partial<Save> | undefined
@@ -168,6 +169,7 @@ export const register: Register = on => {
     const g = grade(e.text)
     pending = g
     tools = 0
+    trace = emptyTrace()
     const today = dayOf(now)
     const s = await commit($, cur => {
       let s2 = cur
@@ -191,15 +193,29 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Remember which files Claude had to find, so tips can name them.
   on('tool.call', (_$, e, next) => {
     tools += 1
+    const name = String(e.tool)
+    const input = e as unknown as Record<string, unknown>
+    const path = typeof input.file_path === 'string' ? input.file_path
+      : typeof input.notebook_path === 'string' ? input.notebook_path : null
+    if (name === 'Read' && path) trace.reads[path] = (trace.reads[path] ?? 0) + 1
+    else if ((name === 'Edit' || name === 'Write' || name === 'MultiEdit' || name === 'NotebookEdit') && path) trace.edits.push(path)
+    else if (name === 'Grep' || name === 'Glob') trace.searches += 1
+    else if (name === 'Bash' && typeof input.command === 'string') {
+      if (isSearch(input.command)) trace.searches += 1
+      trace.check = checkOf(input.command) ?? trace.check
+    }
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId) return result
-    const g = pending
+    const cwd = await $.session.cwd()
+    const home = cwd.match(/^\/(home|Users)\/[^/]+/)?.[0] ?? ''
+    const g = pending ? concretize(pending, trace, p => relPath(p, cwd, home)) : null
     pending = null
     const u = e.usage
     const now = await $.clock.now()

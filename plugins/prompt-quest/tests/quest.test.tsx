@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
-import { grade, levelOf, turnTips } from '../hooks/data'
+import { checkOf, concretize, grade, levelOf, relPath, turnTips } from '../hooks/data'
 
 describe('prompt ranks', () => {
   test('a specific prompt ranks S and earns XP', async () => {
@@ -21,6 +21,18 @@ describe('prompt ranks', () => {
   test('a heavy, cold turn gets token-spend tips', async () => {
     const tips = turnTips({ out: 9000, ratio: 0.1, total: 50000, tools: 20, aborted: false })
     expect(tips.length).toBe(3)
+  })
+  test('tips name the file Claude had to find and the check it ran', async () => {
+    const cwd = '/home/me/proj'
+    const g = concretize(grade('looks broken'), {
+      edits: ['/home/me/proj/hooks/register.tsx'],
+      reads: { '/home/me/proj/hooks/register.tsx': 2, '/home/me/proj/hooks/art.ts': 1 },
+      searches: 3,
+      check: checkOf('cd /home/me/proj && claude plugin test . 2>&1 | tail -3'),
+    }, p => relPath(p, cwd, '/home/me'))
+    expect(g.tips).toContain('Next time point to `hooks/register.tsx` directly. Claude made 6 reads/searches to find it.')
+    expect(g.tips.some(t => t.includes('done when `claude plugin test .` passes'))).toBe(true)
+    expect(g.upgrade).toBe('looks broken in `hooks/register.tsx`, because <why>, done when `claude plugin test .` passes.')
   })
   test('a quick acknowledgement is neutral', async () => {
     expect(grade('yes').xp).toBe(0)
