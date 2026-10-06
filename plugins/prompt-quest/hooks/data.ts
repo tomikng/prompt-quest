@@ -119,29 +119,33 @@ const TIP = {
   wall: 'Lead with the ask in the first line, then the context. Put long logs in a file and reference its path.',
 }
 
-export function grade(text: string): Grade {
-  const t = text.trim()
+export function grade(text: string, attachments = 0): Grade {
+  const hasImage = attachments > 0 || /\[Image #\d+\]/.test(text)
+  const t = text.replace(/\[Image #\d+\]/g, '').trim()
   const words = t.split(/\s+/).filter(Boolean).length
-  if (ACK.test(t)) {
+  if (ACK.test(t) && !hasImage) {
     const tip = 'Short replies are fine when steering. No XP gained or lost.'
-    return { rank: 'C', xp: 0, reasons: ['quick reply'], tip, tips: [tip], upgrade: null }
+    return { rank: 'C', xp: 0, reasons: ['quick reply'], tip, tips: [tip], missing: [], upgrade: null }
   }
   let score = 0
   const reasons: string[] = []
   const tips: string[] = []
   const add: string[] = []
+  const missing: string[] = []
   if (words < 8 && VAGUE.test(t)) { score -= 2; reasons.push('vague'); tips.push(TIP.vague) }
   else if (words < 4) { score -= 1; reasons.push('too terse'); tips.push(TIP.terse) }
-  if (ANCHOR.test(t)) { score += 2; reasons.push('anchored to code/files') } else { tips.push(TIP.anchor); add.push('in <file/function>') }
-  if (PURPOSE.test(t)) { score += 1; reasons.push('purpose stated') } else { tips.push(TIP.purpose); add.push('because <why>') }
-  if (CRITERIA.test(t)) { score += 1; reasons.push('success criteria') } else { tips.push(TIP.criteria); add.push('done when <check>') }
+  if (ANCHOR.test(t)) { score += 2; reasons.push('anchored to code/files') }
+  else if (hasImage) { score += 2; reasons.push('screenshot attached') }
+  else { tips.push(TIP.anchor); add.push('in <file/function>'); missing.push('file') }
+  if (PURPOSE.test(t)) { score += 1; reasons.push('purpose stated') } else { tips.push(TIP.purpose); add.push('because <why>'); missing.push('why') }
+  if (CRITERIA.test(t)) { score += 1; reasons.push('success criteria') } else { tips.push(TIP.criteria); add.push('done when <check>'); missing.push('done-check') }
   if (words >= 12 && words <= 250) { score += 1; reasons.push('good length') }
   if (words > 400 && !t.includes('```')) { score -= 1; reasons.push('wall of text'); tips.push(TIP.wall) }
   const rank: Rank = score >= 4 ? 'S' : score === 3 ? 'A' : score === 2 ? 'B' : score === 1 ? 'C' : score === 0 ? 'D' : 'F'
   const short = words > 14 ? `${t.split(/\s+/).slice(0, 12).join(' ')}…` : t.replace(/[.!?]+$/, '')
   const upgrade = add.length && words <= 400 ? `${short} ${add.join(', ')}.` : null
   const tip = tips[0] ?? 'Textbook prompt. Keep it up!'
-  return { rank, xp: RANK_XP[rank], reasons, tip, tips, upgrade }
+  return { rank, xp: RANK_XP[rank], reasons, tip, tips, missing, upgrade }
 }
 
 /** Token-spend advice from how a turn actually went. */
@@ -311,7 +315,10 @@ export function relPath(path: string, cwd: string, home: string) {
 /** Swaps generic advice for advice naming the real file and the real check. */
 export function concretize(g: Grade, trace: Trace, rel: (p: string) => string): Grade {
   const reads = Object.entries(trace.reads).sort((a, b) => b[1] - a[1])
-  const target = trace.edits[trace.edits.length - 1] ?? reads[0]?.[0]
+  const editCount: Record<string, number> = {}
+  for (const f of trace.edits) editCount[f] = (editCount[f] ?? 0) + 1
+  const mostEdited = Object.entries(editCount).sort((a, b) => b[1] - a[1])[0]?.[0]
+  const target = mostEdited ?? reads[0]?.[0]
   const file = target ? rel(target) : null
   const lookups = Object.values(trace.reads).reduce((a, b) => a + b, 0) + trace.searches
   const tips = g.tips.map(t => {
@@ -334,4 +341,14 @@ export function concretize(g: Grade, trace: Trace, rel: (p: string) => string): 
   if (upgrade && file) upgrade = upgrade.replace('<file/function>', `\`${file}\``)
   if (upgrade && trace.check) upgrade = upgrade.replace('<check>', `\`${trace.check}\` passes`)
   return { ...g, tips, upgrade, tip: tips[0] ?? g.tip }
+}
+
+const PATH_RE = /(?:~\/|\.{0,2}\/)?[\w.-]+(?:\/[\w.-]+)*\.(?:tsx?|jsx?|mjs|cjs|py|rs|go|md|json|lua|sh|toml|ya?ml|css|html|c|cpp|h|java|rb|kt|swift)\b/g
+const WRITE_RE = /sed -i|>>?\s*['"]?[\w~./]|\btee\b|\bpython3?\b|\bnode\b|\bmv\b|\bcp\b|\brsync\b|\bpatch\b/
+
+/** Files a shell command names, and whether it looks like it changes them. */
+export function bashFiles(command: string): { paths: string[]; writes: boolean } {
+  const paths = [...new Set(command.match(PATH_RE) ?? [])]
+    .filter(p => !p.includes('/types/') && !p.endsWith('.d.ts') && !p.includes('node_modules'))
+  return { paths, writes: WRITE_RE.test(command) }
 }

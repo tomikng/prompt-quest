@@ -6,7 +6,7 @@ import { barCells, heroScene, rankBadge, RANK_GLYPH } from './art'
 import type { HeroClass, Mood } from './art'
 import {
   BRANCHES, LORE, PROMPT_TIPS, QUEST_XP, SKILLS,
-  checkOf, concretize, emptyTrace, grade, isSearch, levelOf, questsFor, RANK_COLOR, relPath, skill, titleOf, turnTips,
+  bashFiles, checkOf, concretize, emptyTrace, grade, isSearch, levelOf, questsFor, RANK_COLOR, relPath, skill, titleOf, turnTips,
 } from './data'
 
 const PANE = 'prompt-quest'
@@ -47,6 +47,7 @@ function heroClass(s: Save): HeroClass {
   return best
 }
 
+const MISSING_LABEL: Record<string, string> = { file: 'which file', why: 'why', 'done-check': 'what done means' }
 const CLASS_ICON: Record<HeroClass, string> = { novice: '🧭', scribe: '🪶', alchemist: '🧪', sage: '🔮' }
 const className = (c: HeroClass) => (c === 'novice' ? 'Wanderer' : BRANCHES.find(b => b.id === c)!.name)
 
@@ -166,7 +167,7 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     if (e.origin.kind !== 'composer' || e.text.trim().startsWith('/')) return next(e)
     const now = await $.clock.now()
-    const g = grade(e.text)
+    const g = grade(e.text, e.attachments?.length ?? 0)
     pending = g
     tools = 0
     trace = emptyTrace()
@@ -205,6 +206,11 @@ export const register: Register = on => {
     else if (name === 'Grep' || name === 'Glob') trace.searches += 1
     else if (name === 'Bash' && typeof input.command === 'string') {
       if (isSearch(input.command)) trace.searches += 1
+      const f = bashFiles(input.command)
+      for (const p of f.paths) {
+        if (f.writes) trace.edits.push(p)
+        else trace.reads[p] = (trace.reads[p] ?? 0) + 1
+      }
       trace.check = checkOf(input.command) ?? trace.check
     }
     return next(e)
@@ -220,7 +226,7 @@ export const register: Register = on => {
     const u = e.usage
     const now = await $.clock.now()
     let delta = g?.xp ?? 0
-    const notes: string[] = g ? [...g.reasons] : []
+    const notes: string[] = g ? [`rank ${g.rank} ${g.xp >= 0 ? '+' : '−'}${Math.abs(g.xp)}`, ...g.reasons] : []
     const bumps: string[] = ['turn']
     if (g && (g.rank === 'S' || g.rank === 'A')) bumps.push('sharp')
     if (g?.reasons.includes('purpose stated')) bumps.push('purpose')
@@ -329,6 +335,7 @@ export const register: Register = on => {
     const g = last?.grade
     const purse = isActive(s, 'purse') && last
     const tips = last?.tips ?? []
+    const missing = g?.missing ?? []
     const total = last ? last.inTok + last.cacheRead + last.cacheWrite : 0
     const ratio = total && last ? Math.round((last.cacheRead / total) * 100) : 0
     const els = $.ui.resolve(e) as Record<string, any>
@@ -353,8 +360,16 @@ export const register: Register = on => {
             <Text dimColor wrap="truncate-end"> · {last.notes.join(', ')}</Text>
           </Box>
         )}
-        {tips.length > 0 && (
-          <Text color="#5fb3ff" wrap="truncate-end">💡 {tips[0]}{tips.length > 1 ? `  (+${tips.length - 1} more: /quest)` : ''}</Text>
+        {missing.length > 0 && (
+          <Box gap={1}>
+            <Text color="#ff9f43" bold>🎯 Missing:</Text>
+            {missing.map(m => <Text backgroundColor="#3a3a52" color="#ffd166"> {MISSING_LABEL[m] ?? m} </Text>)}
+            {tips.length > 1 && <Text dimColor>({tips.length} tips: /quest)</Text>}
+          </Box>
+        )}
+        {g?.upgrade && <Text color="#5fff87" wrap="truncate-end">✏️ Try: {g.upgrade}</Text>}
+        {!g?.upgrade && tips.length > 0 && (
+          <Text color="#5fb3ff" wrap="truncate-end">💡 {tips[0]}</Text>
         )}
         {purse && last && (
           <Text dimColor wrap="truncate-end">

@@ -17,6 +17,8 @@ export type Grade = {
   tip: string
   /** Concrete advice for each thing the prompt was missing. */
   tips: string[]
+  /** What the prompt lacked: 'file', 'why', 'done-check'. */
+  missing?: string[]
   /** The prompt rewritten with placeholders for what was missing. */
   upgrade: string | null
 }

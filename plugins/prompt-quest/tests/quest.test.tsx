@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
-import { checkOf, concretize, grade, levelOf, relPath, turnTips } from '../hooks/data'
+import { bashFiles, checkOf, concretize, grade, levelOf, relPath, turnTips } from '../hooks/data'
 
 describe('prompt ranks', () => {
   test('a specific prompt ranks S and earns XP', async () => {
@@ -33,6 +33,17 @@ describe('prompt ranks', () => {
     expect(g.tips).toContain('Next time point to `hooks/register.tsx` directly. Claude made 6 reads/searches to find it.')
     expect(g.tips.some(t => t.includes('done when `claude plugin test .` passes'))).toBe(true)
     expect(g.upgrade).toBe('looks broken in `hooks/register.tsx`, because <why>, done when `claude plugin test .` passes.')
+  })
+  test('a screenshot counts as pointing at something concrete', async () => {
+    const g = grade('Now im getting minus 5xp but the tips does not tell me exactly how [Image #3]')
+    expect(g.reasons).toContain('screenshot attached')
+    expect(g.missing).toEqual(['why', 'done-check'])
+  })
+  test('files edited through shell commands are tracked', async () => {
+    const f = bashFiles("cd mod; python3 - <<'X'\np='hooks/register.tsx'; s=open(p).read()\nX")
+    expect(f.paths).toEqual(['hooks/register.tsx'])
+    expect(f.writes).toBe(true)
+    expect(bashFiles('grep -n foo hooks/data.ts').writes).toBe(false)
   })
   test('a quick acknowledgement is neutral', async () => {
     expect(grade('yes').xp).toBe(0)
