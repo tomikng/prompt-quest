@@ -86,7 +86,7 @@ Each prompt you type is graded on your machine with simple heuristics. No model 
 | --- | --- | --- | --- | --- | --- | --- |
 | XP | +30 | +20 | +10 | 0 | −10 | −20 |
 
-Short replies like "yes" or "continue" are neutral.
+**Questions are graded differently.** You ask because you don't know, so a question is never penalized for not naming a file, a reason or a finish line. A clear question is 💎 B (+10), and one grounded in a file, an error or a screenshot is ⭐ A (+20). Short replies like "yes" or "continue" are neutral.
 
 ### Turn bonuses
 

@@ -104,6 +104,7 @@ export const RANK_COLOR: Record<Rank, string> = {
   S: '#ffd700', A: '#5fff87', B: '#5fb3ff', C: '#bbbbbb', D: '#ff9f43', F: '#ff5f5f',
 }
 
+const QUESTION = /\?\s*$|^(where|what|how|why|when|who|which|is|are|can|could|do|does|did|should|would|will|whats|what's|wheres|where's)\b/i
 const ACK = /^(y|yes|yep|ok|okay|sure|go|go ahead|continue|proceed|do it|thanks|thank you|ty|no|nope|lgtm|ship it)[.!]*$/i
 const VAGUE = /\b(fix (it|this)|doesn'?t work|not working|make it better|do something|it'?s broken|help)\b/i
 const ANCHOR = /`[^`]+`|(^|\s)[\w.-]*\/[\w./-]+|\b[\w-]+\.(ts|tsx|js|py|rs|go|md|json|lua|sh|toml|yaml|yml|css|html|c|cpp|h)\b|\b\w+\(\)|:\d+\b|https?:\/\//
@@ -126,6 +127,20 @@ export function grade(text: string, attachments = 0): Grade {
   if (ACK.test(t) && !hasImage) {
     const tip = 'Short replies are fine when steering. No XP gained or lost.'
     return { rank: 'C', xp: 0, reasons: ['quick reply'], tip, tips: [tip], missing: [], upgrade: null }
+  }
+  // Questions are judged on clarity, not on file/why/done: you ask because you don't know.
+  if (QUESTION.test(t) && words <= 80) {
+    const concrete = ANCHOR.test(t) || hasImage
+    if (words < 3 && !concrete) {
+      const tip = 'Say what the question is about ("where is X saved?") so the answer doesn’t have to guess.'
+      return { rank: 'C', xp: 0, reasons: ['question', 'very short'], tip, tips: [tip], missing: [], upgrade: null }
+    }
+    const tip = concrete ? 'Clear, grounded question.' : 'Good question. Naming the feature or file you mean (if you know it) makes the answer sharper.'
+    return {
+      rank: concrete ? 'A' : 'B', xp: concrete ? 20 : 10,
+      reasons: concrete ? ['question', 'grounded'] : ['question'],
+      tip, tips: concrete ? [] : [tip], missing: [], upgrade: null,
+    }
   }
   let score = 0
   const reasons: string[] = []
@@ -294,12 +309,14 @@ export type Trace = {
 export const emptyTrace = (): Trace => ({ edits: [], reads: {}, searches: 0, check: null })
 
 const SEARCH_CMD = /(^|[|;&]\s*|\s)(grep|rg|find|fd|ls|tree)\s/
-const CHECK_CMD = /\b(test|tests|pytest|jest|vitest|tsc|lint|eslint|validate|check|cargo (test|check|build)|go (test|vet)|make)\b/
+const CHECK_CMD = /^(npm|pnpm|yarn|bun|npx) (run )?(test|lint|check|typecheck)\b|^(pytest|jest|vitest|tsc|eslint|ruff|mypy|make test|cargo (test|check|clippy)|go (test|vet)|mvn test|gradle test|claude plugin (test|validate))\b/
 
 /** The part of a shell command worth quoting back: drop `cd …&&`, pipes and redirects. */
 export function checkOf(command: string): string | null {
-  const parts = command.split(/&&|;|\n/).map(p => p.split('|')[0]!.replace(/\s*\d?>.*$/, '').trim()).filter(Boolean)
-  const hit = parts.filter(p => !p.startsWith('cd ') && CHECK_CMD.test(p)).pop()
+  // Only the command line itself: never heredoc bodies or later lines.
+  const line = command.split('\n')[0]!.split('<<')[0]!
+  const parts = line.split(/&&|;/).map(p => p.split('|')[0]!.replace(/\s*\d?>.*$/, '').trim()).filter(Boolean)
+  const hit = parts.filter(p => CHECK_CMD.test(p)).pop()
   if (!hit) return null
   return hit.length > 48 ? `${hit.slice(0, 47)}…` : hit
 }

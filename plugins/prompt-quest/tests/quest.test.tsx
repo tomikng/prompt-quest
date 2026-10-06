@@ -45,6 +45,16 @@ describe('prompt ranks', () => {
     expect(f.writes).toBe(true)
     expect(bashFiles('grep -n foo hooks/data.ts').writes).toBe(false)
   })
+  test('a question is not punished for missing file/why/done', async () => {
+    const g = grade('Where do we save this state?')
+    expect(g.rank).toBe('B')
+    expect(g.missing).toEqual([])
+    expect(g.upgrade).toBe(null)
+  })
+  test('text inside a heredoc is never taken as the check', async () => {
+    expect(checkOf("cat > x.html <<'EOF'\nTL;DR: tokens refresh early, tests pass.\nEOF")).toBe(null)
+    expect(checkOf('cd app && npm test 2>&1 | tail')).toBe('npm test')
+  })
   test('a quick acknowledgement is neutral', async () => {
     expect(grade('yes').xp).toBe(0)
   })
