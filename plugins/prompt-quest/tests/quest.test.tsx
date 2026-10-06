@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
-import { bashFiles, checkOf, concretize, grade, levelOf, relPath, turnTips } from '../hooks/data'
+import { bashFiles, checkOf, concretize, promptHash, grade, levelOf, relPath, turnTips } from '../hooks/data'
 
 describe('prompt ranks', () => {
   test('a specific prompt ranks S and earns XP', async () => {
@@ -54,6 +54,23 @@ describe('prompt ranks', () => {
   test('text inside a heredoc is never taken as the check', async () => {
     expect(checkOf("cat > x.html <<'EOF'\nTL;DR: tokens refresh early, tests pass.\nEOF")).toBe(null)
     expect(checkOf('cd app && npm test 2>&1 | tail')).toBe('npm test')
+  })
+  test('keyword stuffing in a tiny prompt is capped at B', async () => {
+    const g = grade('fix `a.ts` because should')
+    expect(g.rank).toBe('B')
+  })
+  test('the breakdown adds up to the score', async () => {
+    const g = grade('Fix the token refresh in `src/auth.ts` because users get logged out; tests in auth.test.ts should pass.')
+    expect((g.parts ?? []).filter(p => p.hit).reduce((a, p) => a + p.pts, 0)).toBe(g.score!)
+  })
+  test('repeats are spotted by hash, ignoring case and spacing', async () => {
+    expect(promptHash('Fix the  Bug in a.ts')).toBe(promptHash('fix the bug in a.ts'))
+    expect(promptHash('fix a')).not.toBe(promptHash('fix b'))
+  })
+  test('a model switch and a big history give the /clear and model tips', async () => {
+    const tips = turnTips({ out: 300, ratio: 0.1, total: 120000, tools: 1, aborted: false, modelSwitch: true })
+    expect(tips.some(t => t.includes('/clear before starting a new task'))).toBe(true)
+    expect(tips.some(t => t.includes('Pick your model at the start'))).toBe(true)
   })
   test('a quick acknowledgement is neutral', async () => {
     expect(grade('yes').xp).toBe(0)

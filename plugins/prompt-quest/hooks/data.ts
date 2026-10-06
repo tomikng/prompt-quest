@@ -1,4 +1,4 @@
-import type { Card, Grade, Rank } from '../types'
+import type { Card, Grade, GradePart, Rank } from '../types'
 
 // ── Skill tree ────────────────────────────────────────────────────────────
 // Three branches, four tiers each. A node needs the one above it.
@@ -99,7 +99,7 @@ export const titleOf = (level: number) =>
 
 // ── Prompt grading (local heuristics, zero tokens) ────────────────────────
 
-const RANK_XP: Record<Rank, number> = { S: 30, A: 20, B: 10, C: 0, D: -10, F: -20 }
+export const RANK_XP: Record<Rank, number> = { S: 30, A: 20, B: 10, C: 0, D: -10, F: -20 }
 export const RANK_COLOR: Record<Rank, string> = {
   S: '#ffd700', A: '#5fff87', B: '#5fb3ff', C: '#bbbbbb', D: '#ff9f43', F: '#ff5f5f',
 }
@@ -128,20 +128,20 @@ export function grade(text: string, attachments = 0): Grade {
   const words = t.split(/\s+/).filter(Boolean).length
   if (isReply(t, words) && !hasImage) {
     const tip = 'Replies like this are fine when answering Claude. No XP gained or lost.'
-    return { rank: 'C', xp: 0, reasons: ['reply to Claude'], tip, tips: [tip], missing: [], upgrade: null }
+    return { rank: 'C', xp: 0, reasons: ['reply to Claude'], tip, tips: [tip], missing: [], upgrade: null, mode: 'reply' }
   }
   // Questions are judged on clarity, not on file/why/done: you ask because you don't know.
   if (QUESTION.test(t) && words <= 80) {
     const concrete = ANCHOR.test(t) || hasImage
     if (words < 3 && !concrete) {
       const tip = 'Say what the question is about ("where is X saved?") so the answer doesn’t have to guess.'
-      return { rank: 'C', xp: 0, reasons: ['question', 'very short'], tip, tips: [tip], missing: [], upgrade: null }
+      return { rank: 'C', xp: 0, reasons: ['question', 'very short'], tip, tips: [tip], missing: [], upgrade: null, mode: 'question' }
     }
     const tip = concrete ? 'Clear, grounded question.' : 'Good question. Naming the feature or file you mean (if you know it) makes the answer sharper.'
     return {
       rank: concrete ? 'A' : 'B', xp: concrete ? 20 : 10,
       reasons: concrete ? ['question', 'grounded'] : ['question'],
-      tip, tips: concrete ? [] : [tip], missing: [], upgrade: null,
+      tip, tips: concrete ? [] : [tip], missing: [], upgrade: null, mode: 'question',
     }
   }
   let score = 0
@@ -149,30 +149,54 @@ export function grade(text: string, attachments = 0): Grade {
   const tips: string[] = []
   const add: string[] = []
   const missing: string[] = []
-  if (words < 8 && VAGUE.test(t)) { score -= 2; reasons.push('vague'); tips.push(TIP.vague) }
-  else if (words < 4) { score -= 1; reasons.push('too terse'); tips.push(TIP.terse) }
-  if (ANCHOR.test(t)) { score += 2; reasons.push('anchored to code/files') }
-  else if (hasImage) { score += 2; reasons.push('screenshot attached') }
+  const vague = words < 8 && VAGUE.test(t)
+  const terse = !vague && words < 4
+  const concrete = ANCHOR.test(t) || hasImage
+  const purpose = PURPOSE.test(t)
+  const criteria = CRITERIA.test(t)
+  const goodLength = words >= 12 && words <= 250
+  const wall = words > 400 && !t.includes('```')
+  const parts: GradePart[] = [
+    { label: 'Concrete: a file, function, command, error or screenshot', pts: 2, hit: concrete },
+    { label: 'Why: because…, so that…, the goal is…', pts: 1, hit: purpose },
+    { label: 'Done means: should…, must…, tests pass, without…', pts: 1, hit: criteria },
+    { label: 'Length: 12–250 words', pts: 1, hit: goodLength },
+    { label: 'Vague and tiny ("fix it", "doesn’t work")', pts: -2, hit: vague, penalty: true },
+    { label: 'Too terse (under 4 words)', pts: -1, hit: terse, penalty: true },
+    { label: 'Wall of text (400+ words, no code block)', pts: -1, hit: wall, penalty: true },
+  ]
+  for (const p of parts) if (p.hit) score += p.pts
+  if (vague) { reasons.push('vague'); tips.push(TIP.vague) }
+  if (terse) { reasons.push('too terse'); tips.push(TIP.terse) }
+  if (ANCHOR.test(t)) reasons.push('anchored to code/files')
+  else if (hasImage) reasons.push('screenshot attached')
   else { tips.push(TIP.anchor); add.push('in <file/function>'); missing.push('file') }
-  if (PURPOSE.test(t)) { score += 1; reasons.push('purpose stated') } else { tips.push(TIP.purpose); add.push('because <why>'); missing.push('why') }
-  if (CRITERIA.test(t)) { score += 1; reasons.push('success criteria') } else { tips.push(TIP.criteria); add.push('done when <check>'); missing.push('done-check') }
-  if (words >= 12 && words <= 250) { score += 1; reasons.push('good length') }
-  if (words > 400 && !t.includes('```')) { score -= 1; reasons.push('wall of text'); tips.push(TIP.wall) }
-  const rank: Rank = score >= 4 ? 'S' : score === 3 ? 'A' : score === 2 ? 'B' : score === 1 ? 'C' : score === 0 ? 'D' : 'F'
+  if (purpose) reasons.push('purpose stated'); else { tips.push(TIP.purpose); add.push('because <why>'); missing.push('why') }
+  if (criteria) reasons.push('success criteria'); else { tips.push(TIP.criteria); add.push('done when <check>'); missing.push('done-check') }
+  if (goodLength) reasons.push('good length')
+  if (wall) { reasons.push('wall of text'); tips.push(TIP.wall) }
+  let rank: Rank = score >= 4 ? 'S' : score === 3 ? 'A' : score === 2 ? 'B' : score === 1 ? 'C' : score === 0 ? 'D' : 'F'
+  // Anti-stuffing: "fix `a.ts` because should" hits every signal but says nothing.
+  if (words < 8 && (rank === 'S' || rank === 'A')) {
+    rank = 'B'
+    reasons.push('short: capped at B')
+    parts.push({ label: 'Under 8 words: capped at rank B (no keyword stuffing)', pts: 0, hit: true, penalty: true })
+  }
   const short = words > 14 ? `${t.split(/\s+/).slice(0, 12).join(' ')}…` : t.replace(/[.!?]+$/, '')
   const upgrade = add.length && words <= 400 ? `${short} ${add.join(', ')}.` : null
   const tip = tips[0] ?? 'Textbook prompt. Keep it up!'
-  return { rank, xp: RANK_XP[rank], reasons, tip, tips, missing, upgrade }
+  return { rank, xp: RANK_XP[rank], reasons, tip, tips, missing, upgrade, mode: 'task', score, parts }
 }
 
 /** Token-spend advice from how a turn actually went. */
-export function turnTips(t: { out: number; ratio: number; total: number; tools: number; aborted: boolean }): string[] {
+export function turnTips(t: { out: number; ratio: number; total: number; tools: number; aborted: boolean; modelSwitch?: boolean }): string[] {
   const tips: string[] = []
   if (t.aborted) tips.push('Interrupted turns still bill the tokens spent so far. A clearer first prompt avoids restarts.')
   if (t.out > 8000) tips.push('Big reply. Ask for "just the diff", "summary only" or "max 5 bullets" when that is enough. Output costs ~5× input.')
   if (t.total > 2000 && t.ratio < 0.5) tips.push('Mostly cold cache this turn. Replying within a few minutes reuses it at ~10% of the price; /clear between unrelated tasks keeps context small.')
   if (t.tools > 15) tips.push(`${t.tools} tool calls. Naming the files or commands up front saves Claude from searching.`)
-  if (t.total > 150000) tips.push('Context is getting large, and every turn re-reads it. Consider /compact or /clear when switching topics.')
+  if (t.total > 100000) tips.push(`Every message re-sends the whole history (${Math.round(t.total / 1000)}k tokens now). /clear before starting a new task.`)
+  if (t.modelSwitch) tips.push('Switching model mid-session rebuilds the prompt cache at full price. Pick your model at the start and stick with it.')
   return tips
 }
 
@@ -188,6 +212,7 @@ export const QUESTS: Quest[] = [
   { id: 'quizright', name: 'Quiz Champion', goal: 2, desc: 'Answer 2 quiz questions right' },
   { id: 'turn', name: 'Journeyman', goal: 5, desc: 'Complete 5 turns' },
   { id: 'purpose', name: 'Why Seeker', goal: 3, desc: 'State your purpose in 3 prompts' },
+  { id: 'clear', name: 'Clean Slate', goal: 1, desc: '/clear after a long conversation (50k+ tokens)' },
 ]
 
 export const QUEST_XP = 50
@@ -257,6 +282,27 @@ export const LORE: Card[] = [
   c('foundations', 'thinking', 'Extended Thinking',
     'Reasoning models can “think” in tokens before answering. Thinking tokens are billed as output, so higher effort usually means better answers on hard problems in exchange for more tokens and time.',
     'Thinking tokens are billed as…', ['Free', 'Input tokens', 'Output tokens'], 2),
+  c('internals', 'request', 'What Every Request Carries',
+    'Claude Code doesn’t send just your message. Every request carries the system prompt, your CLAUDE.md, a git status snapshot, every tool definition and the whole conversation so far. When Claude uses a tool, it runs on your machine and the result goes back for another round.',
+    'When Claude reads one of your files, where does the read happen?', ['On Anthropic’s servers', 'On your machine', 'In the browser'], 1),
+  c('internals', 'cachebreak', 'Cache Breakers',
+    'The prompt cache only matches an identical prefix, for the same model. Switching model mid-session, changing settings that alter the system prompt or tools (adding an MCP server, say), changing thinking settings, or going idle past the cache lifetime all make the next request pay full price again.',
+    'Which of these breaks the prompt cache?', ['Replying again within a minute', 'Switching model mid-session', 'Asking a short question'], 1),
+  c('internals', 'planexec', 'Plan Strong, Build Lean',
+    'Planning needs the best reasoning; typing out code mostly doesn’t. Some setups plan with the strongest model and execute with a faster, cheaper one. In Claude Code the `opusplan` model setting does exactly this: Opus in Plan mode, Sonnet otherwise.',
+    'What does the `opusplan` setting use for executing code?', ['Opus', 'Sonnet', 'Haiku'], 1),
+  c('internals', 'adaptive', 'Adaptive Thinking & Effort',
+    'With adaptive thinking the model decides how much to think from how hard the request is: a quick lookup gets little, an architecture question gets a lot. The effort level steers how eagerly it thinks. Thinking tokens bill as output, so lower effort on simple work saves tokens.',
+    'Higher effort mostly means…', ['More thinking tokens on hard problems', 'A bigger context window', 'Cheaper replies'], 0),
+  c('internals', 'clear', 'Why /clear Saves Money',
+    'Every message re-sends the whole conversation. After a few dozen turns that can be 100k+ tokens riding along with each new message, even a one-liner. /clear starts fresh, so the next message carries only the system prompt and your words. Rule of thumb: /clear before a new task.',
+    'After 30 turns, what does your next message carry?', ['Only the new message', 'The whole conversation so far', 'The last 3 messages'], 1),
+  c('internals', 'compact', 'Auto-compact',
+    'When the conversation nears the context limit, Claude Code summarizes the older parts to free space and keeps the recent ones. It’s automatic and normal, but a summary loses detail: put decisions that must survive in CLAUDE.md, and /clear between unrelated tasks so it’s rarely needed.',
+    'Auto-compact makes room by…', ['Deleting your files', 'Summarizing older conversation', 'Switching to a bigger model'], 1),
+  c('internals', 'claudemd', 'CLAUDE.md Is Always On',
+    'Your CLAUDE.md is loaded into every request of the session. That makes it the place for lasting project rules, and also a cost: every line rides along with every message (cached, but still counted). Keep it short and specific.',
+    'Why keep CLAUDE.md short?', ['It is sent with every request', 'Claude ignores long files', 'It slows down git'], 0),
   c('archives', 'kvcache', 'The KV Cache',
     'During generation the keys and values of earlier tokens are stored so that each new token reuses them instead of recomputing. This is why long contexts eat GPU memory, and prompt caching persists exactly this work across requests.',
     'What does the KV cache avoid?', ['Recomputing attention keys/values for earlier tokens', 'Tokenizing text', 'Downloading weights'], 0),
@@ -370,4 +416,12 @@ export function bashFiles(command: string): { paths: string[]; writes: boolean }
   const paths = [...new Set(command.match(PATH_RE) ?? [])]
     .filter(p => !p.includes('/types/') && !p.endsWith('.d.ts') && !p.includes('node_modules'))
   return { paths, writes: WRITE_RE.test(command) }
+}
+
+/** A short stable hash of a prompt's words, so repeats can be spotted without keeping the text. */
+export function promptHash(text: string) {
+  const norm = text.toLowerCase().replace(/\[image #\d+\]/g, '').replace(/[^\p{L}\p{N}`./_-]+/gu, ' ').trim()
+  let h = 0x811c9dc5
+  for (let i = 0; i < norm.length; i++) h = Math.imul(h ^ norm.charCodeAt(i), 0x01000193) >>> 0
+  return h.toString(36)
 }

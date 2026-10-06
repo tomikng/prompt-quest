@@ -2,11 +2,11 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Card, Grade, Save, Session, Tab } from '../types'
-import { barCells, heroScene, HIT_FRAMES, rankBadge, RANK_GLYPH } from './art'
+import { barCells, heroScene, HIT_FRAMES, rankBadge, RANK_GLYPH, scoreMeterCells } from './art'
 import type { HeroClass, Mood } from './art'
 import {
   BRANCHES, LORE, PROMPT_TIPS, QUEST_XP, SKILLS,
-  bashFiles, checkOf, concretize, emptyTrace, grade, isSearch, levelOf, questsFor, RANK_COLOR, relPath, skill, titleOf, turnTips,
+  bashFiles, checkOf, concretize, emptyTrace, grade, isSearch, promptHash, RANK_XP, levelOf, questsFor, RANK_COLOR, relPath, skill, titleOf, turnTips,
 } from './data'
 
 const PANE = 'prompt-quest'
@@ -65,6 +65,7 @@ const textBar = (into: number, need: number, width = 10) => {
 function deck(s: Save): Card[] {
   return [
     ...LORE.filter(c => c.deck === 'foundations'),
+    ...LORE.filter(c => c.deck === 'internals'),
     ...(isActive(s, 'archives') ? LORE.filter(c => c.deck === 'archives') : []),
     ...s.custom,
   ]
@@ -160,13 +161,16 @@ export const register: Register = on => {
   let pendingText = ''
   let tools = 0
   let trace = emptyTrace()
+  // Model and context size of the last main turn: for cache-break and /clear rules.
+  let lastModel: string | null = null
+  let lastContext = 0
 
   on('session.start', async ($, e, next) => {
     const stored = (await $.store.get('save')) as Partial<Save> | undefined
     if (stored) await update($, saveA, () => ({ ...FRESH, ...stored, stats: { ...FRESH.stats, ...stored.stats } }))
     await $.command.register({
       name: 'quest',
-      description: 'Prompt Quest: hero, skills, quests, lore · /quest [skills|quests|lore|close|band|budget <n>|oracle <topic>|feedback [--prompt] <why>|idea <text>]',
+      description: 'Prompt Quest: hero, skills, quests, lore · /quest [skills|quests|lore|close|band|budget <n>|oracle <topic>|rules|feedback [--prompt] <why>|idea <text>]',
     })
     $.clock.every(FRAME_MS, () => {
       frame += 1
@@ -195,7 +199,13 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     if (e.origin.kind !== 'composer' || e.text.trim().startsWith('/')) return next(e)
     const now = await $.clock.now()
-    const g = grade(e.text, e.attachments?.length ?? 0)
+    let g = grade(e.text, e.attachments?.length ?? 0)
+    // Repeating a prompt earns nothing: only a hash is kept, never the text.
+    const hash = promptHash(e.text)
+    const seen = await read($, saveA)
+    if (g.mode !== 'reply' && (seen.recent ?? []).includes(hash)) {
+      g = { ...g, xp: 0, reasons: [...g.reasons, 'repeated prompt: no XP'], tip: 'You sent this prompt before, so it earns no XP this time.' }
+    }
     pending = g
     pendingText = e.text
     tools = 0
@@ -212,6 +222,7 @@ export const register: Register = on => {
       }
       return {
         ...s2,
+        recent: [...(s2.recent ?? []).filter(x => x !== hash), hash].slice(-50),
         stats: { ...s2.stats, prompts: s2.stats.prompts + 1, ranks: { ...s2.stats.ranks, [g.rank]: (s2.stats.ranks[g.rank] ?? 0) + 1 } },
       }
     })
@@ -224,6 +235,24 @@ export const register: Register = on => {
   })
 
   // Remember which files Claude had to find, so tips can name them.
+  // /clear after a long conversation is exactly the habit that saves money.
+  on('session.end', async ($, e, next) => {
+    if (e.reason === 'clear') {
+      const ctx = lastContext
+      lastContext = 0
+      if (ctx >= 50_000) await award($, 10, `Clean Slate: /clear with ${Math.round(ctx / 1000)}k history`, ['clear'])
+      else if (ctx > 0) $.ui.toast('🧹 Cleared. (Clean Slate XP needs 50k+ tokens of history to make a difference.)')
+    }
+    return next(e)
+  })
+
+  on('session.compact', async ($, e, next) => {
+    if (e.trigger === 'auto' && !e.agentId) {
+      $.ui.toast('📦 Auto-compact: older history was summarized to free space. /clear between unrelated tasks keeps it rarely needed.')
+    }
+    return next(e)
+  })
+
   on('tool.call', (_$, e, next) => {
     tools += 1
     const name = String(e.tool)
@@ -254,7 +283,8 @@ export const register: Register = on => {
     pending = null
     const u = e.usage
     const now = await $.clock.now()
-    let delta = g?.xp ?? 0
+    // Prompt XP needs a real turn: usage comes from the API, not from anything typed.
+    let delta = u ? (g?.xp ?? 0) : 0
     const notes: string[] = g ? [`rank ${g.rank} ${g.xp >= 0 ? '+' : '−'}${Math.abs(g.xp)}`, ...g.reasons] : []
     const bumps: string[] = ['turn']
     if (g && (g.rank === 'S' || g.rank === 'A')) bumps.push('sharp')
@@ -264,7 +294,12 @@ export const register: Register = on => {
     if (u) {
       const total = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
       const ratio = total ? u.cache_read_input_tokens / total : 0
-      spendTips = turnTips({ out: u.output_tokens, ratio, total, tools, aborted: e.reason === 'aborted' })
+      const modelSwitch = lastModel !== null && u.model !== lastModel && ratio < 0.5 && total > 2000
+      // Tip, not a penalty: opusplan switches models on purpose.
+      if (modelSwitch) notes.push('cache break: model switched')
+      lastModel = u.model
+      lastContext = total
+      spendTips = turnTips({ out: u.output_tokens, ratio, total, tools, aborted: e.reason === 'aborted', modelSwitch })
       if (ratio >= 0.8 && total > 2000) { delta += 5; notes.push('cache hit +5'); bumps.push('cache') }
       if (u.output_tokens < 600) { delta += 5; notes.push('lean reply +5'); bumps.push('lean') }
       if (u.output_tokens > 8000) { delta -= 5; notes.push('heavy output −5') }
@@ -349,7 +384,8 @@ export const register: Register = on => {
       await commit($, () => FRESH)
       return { text: 'Your hero was reborn at level 1.' }
     }
-    const tab: Tab = sub === 'skills' || sub === 'quests' || sub === 'lore' ? sub : 'hero'
+    const tab: Tab = sub === 'skills' || sub === 'quests' || sub === 'lore' || sub === 'rules' ? sub
+      : sub === 'help' || sub === 'ranking' ? 'rules' : 'hero'
     await open(tab)
     return { text: 'Prompt Quest opened. /quest close hides it.' }
   })
@@ -428,7 +464,7 @@ export const register: Register = on => {
     look = { ...look, cls: heroClass(s), mood: ss.mood, moodAt: ss.moodAt, dmg: ss.dmg ?? look.dmg, rank: ss.last?.grade?.rank ?? look.rank, bar: levelOf(s.xp).into / levelOf(s.xp).need }
     paneLive = terminal
 
-    const tabs: [Tab, string][] = [['hero', 'Hero'], ['skills', 'Skills'], ['quests', 'Quests'], ['lore', 'Lore']]
+    const tabs: [Tab, string][] = [['hero', 'Hero'], ['skills', 'Skills'], ['quests', 'Quests'], ['lore', 'Lore'], ['rules', 'Rules']]
     const header = (
       <Box gap={1}>
         {tabs.map(([id, label], i) => (
@@ -444,6 +480,7 @@ export const register: Register = on => {
     if (tab === 'skills') body = await skillsTab($, e, s)
     else if (tab === 'quests') body = questsTab($, e, s)
     else if (tab === 'lore') body = await loreTab($, e, s)
+    else if (tab === 'rules') body = rulesTab($, e, ss)
     else body = await heroTab($, e, s, ss, width, terminal)
 
     return (
@@ -690,6 +727,83 @@ async function loreTab($: $T, e: RenderE, s: Save) {
   )
 }
 
+function rulesTab($: $T, e: RenderE, ss: Session) {
+  const { Box, Text } = $.ui.resolve(e)
+  const Raster = e.surface === 'terminal' ? ($.ui.resolve(e) as Record<string, any>).Raster : undefined
+  const g = ss.last?.grade ?? null
+  const mode = g?.mode ?? (g ? 'task' : null)
+  const order = ['F', 'D', 'C', 'B', 'A', 'S'] as const
+  const sign = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0')
+
+  const ladder = (
+    <Box flexDirection="column">
+      {Raster && <Raster key="meter" {...scoreMeterCells(mode === 'task' ? (g?.score ?? null) : null, frame)} />}
+      <Box>
+        {order.map(r => <Text color={RANK_COLOR[r]} bold>{`${r}`.padEnd(6)}</Text>)}
+      </Box>
+      <Box>
+        {order.map((r, i) => <Text dimColor>{(i === 0 ? '≤−1' : i === 5 ? '4+' : String(i - 1)).padEnd(6)}</Text>)}
+      </Box>
+      <Box>
+        {order.map(r => <Text color={RANK_COLOR[r]}>{sign(RANK_XP[r]).padEnd(6)}</Text>)}
+      </Box>
+      <Text dimColor>points → rank → XP</Text>
+    </Box>
+  )
+
+  let breakdown
+  if (!g) breakdown = <Text dimColor>Send a prompt and its breakdown appears here.</Text>
+  else if (mode === 'reply') breakdown = (
+    <Box flexDirection="column">
+      <Text>Judged as a <Text bold>reply to Claude</Text> (short, starts with yes/no/ok/sure…).</Text>
+      <Text dimColor>Replies are neutral: rank C, 0 XP, no tips. Steering Claude is never punished.</Text>
+    </Box>
+  )
+  else if (mode === 'question') breakdown = (
+    <Box flexDirection="column">
+      <Text>Judged as a <Text bold>question</Text> (ends with ? or starts with where/what/how/is/can…).</Text>
+      <Text>{g.reasons.includes('grounded') ? '✅' : '⬜'} Points at a file, error or screenshot → A (+20), otherwise B (+10)</Text>
+      <Text dimColor>Questions never lose XP for a missing file/why/done: you ask because you don’t know.</Text>
+    </Box>
+  )
+  else breakdown = (
+    <Box flexDirection="column">
+      {(g.parts ?? []).filter(p => !p.penalty || p.hit).map(p => (
+        <Box gap={1}>
+          <Text>{p.penalty ? '⚠️' : p.hit ? '✅' : '⬜'}</Text>
+          <Text color={p.hit ? (p.pts > 0 ? '#5fff87' : '#ff5f5f') : '#7f849c'} bold>{(p.hit ? sign(p.pts) : '0').padStart(2)}</Text>
+          <Text dimColor={!p.hit}>{p.label}{!p.hit && !p.penalty ? `  (worth ${sign(p.pts)})` : ''}</Text>
+        </Box>
+      ))}
+      <Text> </Text>
+      <Text>Score <Text bold>{g.score ?? '?'}</Text> → Rank <Text bold color={RANK_COLOR[g.rank]}>{g.rank}</Text> → <Text bold color={g.xp >= 0 ? '#5fff87' : '#ff5f5f'}>{sign(g.xp)} XP</Text></Text>
+    </Box>
+  )
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Text bold color="#ffd166">📏 How ranking works</Text>
+      <Box flexDirection="column">
+        <Text bold>Your last prompt</Text>
+        {breakdown}
+      </Box>
+      <Box flexDirection="column">
+        <Text bold>The ladder</Text>
+        {ladder}
+      </Box>
+      <Box flexDirection="column">
+        <Text bold>Then the turn adds</Text>
+        <Text>🪙 <Text color="#5fff87">+5</Text> cache hit: ≥80% of input read from the prompt cache (real API counts)</Text>
+        <Text>🪶 <Text color="#5fff87">+5</Text> lean reply: under 600 output tokens</Text>
+        <Text>✋ <Text color="#ff5f5f">−5</Text> interrupted turn · 🐘 <Text color="#ff5f5f">−5</Text> reply over 8k output tokens</Text>
+        <Text>🔀 <Text dimColor>tip</Text> cache break: model switched mid-session and the cache went cold (no XP lost; opusplan does this on purpose)</Text>
+        <Text>🧹 <Text color="#5fff87">+10</Text> /clear after 50k+ tokens of history (starting fresh is cheaper)</Text>
+      </Box>
+      <Text dimColor>All of this runs locally, with no tokens spent. Full guide: HELP.md · Wrong rank? Press Report on the Hero tab.</Text>
+    </Box>
+  )
+}
+
 // ── Oracle's Eye: a new lore card from Haiku ──────────────────────────────
 
 async function oracle($: $T, topic: string, open: (t: Tab) => Promise<void>) {
@@ -744,7 +858,7 @@ async function report($: $T, kind: 'rank' | 'idea', comment: string, withPrompt:
       `Missing: ${(g.missing ?? []).join(', ') || 'none'}`,
       `Notes: ${last.notes.join(', ')}`,
       `Words: ${(last.prompt ?? '').split(/\s+/).filter(Boolean).length}`,
-      `Plugin 0.2.0 · Claude Code ${version}`,
+      `Plugin 0.3.0 · Claude Code ${version}`,
     ].join('\n'))
     if (comment) params.set('why', comment)
     if (withPrompt && last.prompt) params.set('prompt', last.prompt.slice(0, 1500))

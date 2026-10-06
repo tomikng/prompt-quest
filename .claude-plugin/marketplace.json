@@ -9,7 +9,7 @@
       "name": "prompt-quest",
       "source": "./plugins/prompt-quest",
       "description": "Earn XP from sharp prompts, lose it on vague ones. Skill tree perks, daily quests, AI lore quizzes and an animated pixel-art hero.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": { "name": "tomikng" },
       "category": "productivity",
       "keywords": ["game", "rpg", "prompting", "tokens", "learning"]
