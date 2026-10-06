@@ -7,7 +7,7 @@
 **An RPG layer for [Claude Code](https://claude.com/claude-code).**
 Level up by writing sharper prompts, spending tokens wisely and learning how modern AI works.
 
-[![Version](https://img.shields.io/badge/version-0.3.0-8b5cf6)](.claude-plugin/marketplace.json)
+[![Version](https://img.shields.io/badge/version-0.4.0-8b5cf6)](.claude-plugin/marketplace.json)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-%E2%89%A5%202.1.289-d97757)](https://claude.com/claude-code)
 [![License: MIT](https://img.shields.io/github/license/tomikng/prompt-quest?color=22c55e)](LICENSE)
 [![Grading cost](https://img.shields.io/badge/prompt%20grading-0%20tokens-38bdf8)](#privacy)
@@ -102,7 +102,9 @@ Then start `claude` and type `/quest`.
 > Pixel art draws in the terminal. Other surfaces get a text version.
 > The side pane docks beside the transcript when the terminal is at least 144 columns wide.
 
-**Update** later from a shell:
+**Updates.** Auto-update is **off by default** for community marketplaces like this one. To turn it on: `/plugin` → **Marketplaces** → `prompt-quest` → **Enable auto-update**. Claude Code then checks for updates each time a session starts.
+
+To update by hand, use `/plugin` → **Installed** → **Update now**, or from a shell:
 
 ```bash
 claude plugin marketplace update prompt-quest
@@ -118,14 +120,22 @@ Each prompt you type is graded on your machine with simple heuristics. No model 
 | What your prompt has | Points |
 | --- | --- |
 | Something concrete: a file, function, command, error text, or a screenshot | +2 |
-| A reason: *because…*, *so that…*, *the goal is…* | +1 |
-| A finish line: *should*, *must*, *tests pass*, *without…* | +1 |
-| A sensible length (12–250 words) | +1 |
-| Vague and tiny ("fix it", "doesn't work") | −2 |
+| *or*, mid-session, a short follow-up that builds on the task in progress | +1 |
+| A reason: *because…*, *so that…* | +1 |
+| A finish line: *should*, *must*, *until…* | +1 |
+| A way to verify: *run the tests*, *check that…*, *screenshot* | +1 |
+| A scope: *only…*, *don't…*, *keep…* | +1 |
+| A plan first: *propose a plan*, *before editing…* | +1 |
+| An example: *e.g.*, a code block | +1 |
+| A sensible length (12–600 words) | +1 |
+| Vague and tiny ("fix it" with no context) | −2 |
 
 | Rank | 👑 S | ⭐ A | 💎 B | ⚪ C | 🔻 D | 💀 F |
 | --- | --- | --- | --- | --- | --- | --- |
+| Points | 5+ | 3–4 | 2 | 1 | 0 | ≤ −1 |
 | XP | +30 | +20 | +10 | 0 | −10 | −20 |
+
+S takes the habits that make agentic work go well: verification, scope, a plan or an example. Follow-ups like "now do the same for signup" aren't punished for not repeating context.
 
 **Questions are graded differently.** You ask because you don't know, so a question is never penalized for not naming a file, a reason or a finish line. A clear question is 💎 B (+10), and one grounded in a file, an error or a screenshot is ⭐ A (+20). Replies to Claude like "yes", "yes push them" or "no, keep it" are neutral.
 
@@ -140,9 +150,10 @@ The full rules, with worked examples, are in the [📖 Player's Guide](HELP.md#h
 | Event | XP |
 | --- | --- |
 | Cache hit ≥ 80% | +5 |
-| Reply under 600 output tokens | +5 |
+| Plan mode used in the turn | +5 |
+| Text-only reply under 600 output tokens | +5 |
 | Interrupted turn | −5 |
-| Reply over 8k output tokens | −5 |
+| Text-only reply over 8k output tokens | −5 |
 | `/clear` after 50k+ tokens of history | +10 |
 | Lore card read · quiz answered right · daily quest done | +15 · +25 · +50 |
 

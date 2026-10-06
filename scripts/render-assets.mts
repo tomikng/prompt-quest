@@ -98,9 +98,9 @@ for (let t = 0; t < 20; t++) {
   ppm(`drain-${String(t).padStart(2, '0')}`, [{ cv, x: 1, y: 1 }], 22, 4)
 }
 
-// Score meter still for the Rules mockup (score 2 → B)
+// Score meter still for the Rules mockup (rank B)
 {
-  const c = scoreMeterCells(2, 0)
+  const c = scoreMeterCells('B', 0)
   const bytes = Buffer.from(c.cells, 'base64')
   const cv = { w: c.columns, h: c.rows * 2, get: (x: number, y: number) => {
     const o = (Math.floor(y / 2) * c.columns + x) * 12

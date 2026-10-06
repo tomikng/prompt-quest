@@ -59,27 +59,34 @@ You ask because you don't know, so a question **never** loses XP for a missing f
 | Clear question | 💎 B | +10 |
 | One or two words ("why?") | ⚪ C | 0 |
 
-### 3. Tasks: scored on four signals
+### 3. Tasks: scored on agentic habits
 
-Everything else is a task. It earns points for each signal it contains:
+Everything else is a task. The signals reward what works with coding agents: point at the code, say why, and give Claude a way to know it's done and to check its work.
 
 | Signal | Points | Counts when the prompt has… |
 | --- | --- | --- |
-| **Concrete** | +2 | a path (`src/auth.ts`), a code span in backticks, a `function()`, a line number (`:42`), a URL, or a screenshot |
-| **Why** | +1 | *because, so that, the goal is, I need, I want, ideally…* |
-| **Done means** | +1 | *should, must, expect, make sure, verify, test, without, don't, only, at most…* |
-| **Length** | +1 | 12–250 words |
-| Vague and tiny | −2 | under 8 words *and* "fix it", "doesn't work", "make it better", "help"… |
-| Too terse | −1 | under 4 words (when not vague) |
-| Wall of text | −1 | over 400 words with no code block |
+| **Concrete** | +2 | a path (`src/auth.ts`), a code span in backticks, a `function()`, a line number (`:42`), an `@file` mention, a URL, or a screenshot |
+| **Follow-up** | +1 | no file named, but you're mid-session (a turn in the last 30 min) and the prompt is 40 words or fewer. It builds on the task in progress, so you don't need to repeat yourself. |
+| **Why** | +1 | *because, so that, the goal is, I need, users can't…* |
+| **Done means** | +1 | *should, must, until, returns, instead of, done when…* |
+| **Verifiable** | +1 | *run the tests, tests pass, verify, check that, lint, typecheck, screenshot, curl…* |
+| **Scoped** | +1 | *only, don't, without, keep, avoid, no new, at most…* |
+| **Plan first** | +1 | *propose a plan, options, trade-offs, before editing, ask me, think it through…* |
+| **Example** | +1 | *e.g., for example, such as*, or a code block |
+| **Length** | +1 | 12–600 words |
+| Vague and tiny | −2 | under 8 words *and* "fix it", "doesn't work", "help"… (not counted mid-session) |
+| Too terse | −1 | under 4 words (not counted mid-session) |
+| Wall of text | −1 | over 800 words with no headings, bullets or code block |
 
 Then the points map to a rank:
 
 ```text
- points   ≤ −1    0     1     2     3    4+
+ points   ≤ −1    0     1     2    3–4    5+
  rank      F     D     C     B     A     S
  XP       −20   −10    0    +10   +20   +30
 ```
+
+**S needs 5+ points.** A clear, anchored prompt with a reason reaches A; the top rank also takes a habit that makes agentic work go well: verification, scope, a plan or an example.
 
 **Anti-stuffing rule:** a task under 8 words is capped at **B**, even if it hits every signal.
 
@@ -87,12 +94,14 @@ Then the points map to a rank:
 
 | Prompt | Signals | Points | Rank |
 | --- | --- | --- | --- |
-| `fix it` | vague and tiny | −2 | 💀 F (−20) |
+| `fix it` (new session) | vague and tiny | −2 | 💀 F (−20) |
+| `fix it` (right after a turn) | follow-up | 1 | ⚪ C (0) |
 | `login is broken` | too terse (3 words) | −1 | 💀 F (−20) |
-| `the login page is broken` | none | 0 | 🔻 D (−10) |
 | `fix the login bug in src/auth.ts` | concrete | 2 | 💎 B (+10) |
-| `fix the login bug in src/auth.ts because users get logged out after 5 minutes` | concrete, why, length | 4 | 👑 S (+30) |
-| `Fix the token refresh in src/auth.ts because users get logged out; auth.test.ts should pass.` | concrete, why, done, length | 5 | 👑 S (+30) |
+| `now do the same for the signup page, tests should pass` (mid-session) | follow-up, done, verifiable | 3 | ⭐ A (+20) |
+| `fix the login bug in src/auth.ts because users get logged out after 5 minutes` | concrete, why, length | 4 | ⭐ A (+20) |
+| `Fix the token refresh in src/auth.ts because users get logged out. Only touch that file, then run npm test to verify.` | concrete, why, scoped, verifiable, length | 6 | 👑 S (+30) |
+| `Propose a plan before editing: we need rate limiting on /api/login because of brute force. Keep the public API the same and run the tests.` | concrete, why, plan, scoped, verifiable, length | 7 | 👑 S (+30) |
 
 ## Turn bonuses and penalties
 
@@ -101,9 +110,10 @@ When the turn ends, Prompt Quest reads the turn's **real token counts as reporte
 | Event | XP | Measured how |
 | --- | --- | --- |
 | 🪙 Cache hit | +5 | cache-read tokens ÷ all input tokens ≥ 80%, in a turn with over 2,000 input tokens |
-| 🪶 Lean reply | +5 | under 600 output tokens |
+| 🪶 Lean reply | +5 | under 600 output tokens in a turn with no file edits (code changes are the work, so they're never counted against you) |
 | ✋ Interrupted turn | −5 | you stopped the turn |
-| 🐘 Heavy output | −5 | over 8,000 output tokens |
+| 🗺 Plan mode | +5 | Claude entered or left Plan mode this turn, so it planned before changing anything |
+| 🐘 Heavy output | −5 | over 8,000 output tokens in a turn with no file edits |
 | 🧹 Clean Slate | +10 | you ran `/clear` while carrying 50k+ tokens of history |
 | 🔀 Cache break | tip only | the model changed since the last turn and the cache went cold (no XP lost, since `opusplan` switches on purpose) |
 
