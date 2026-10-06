@@ -11,7 +11,7 @@ magick -delay 20 -loop 0 "$tmp"/drain-*.ppm -filter point -resize 2000x1000% -la
 magick -delay 9 -loop 0 "$tmp"/ranks-*.ppm -filter point -resize 800% -layers Optimize assets/ranks.gif
 for f in "$tmp"/still-*.ppm; do magick "$f" "${f%.ppm}.png"; done
 cp scripts/mockups/*.html scripts/mockups/*.css "$tmp"/
-for page in band-strong band-weak pane-hero pane-skills; do
+for page in band-strong band-weak pane-hero pane-skills pane-rules; do
   size=$(grep -o 'data-size="[0-9]*,[0-9]*"' "scripts/mockups/$page.html" | grep -o '[0-9]*,[0-9]*')
   chromium --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
     --window-size="$size" --screenshot="$tmp/$page.png" "file://$tmp/$page.html" >/dev/null 2>&1

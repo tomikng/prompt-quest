@@ -7,13 +7,13 @@
 **An RPG layer for [Claude Code](https://claude.com/claude-code).**
 Level up by writing sharper prompts, spending tokens wisely and learning how modern AI works.
 
-[![Version](https://img.shields.io/badge/version-0.2.0-8b5cf6)](.claude-plugin/marketplace.json)
+[![Version](https://img.shields.io/badge/version-0.3.0-8b5cf6)](.claude-plugin/marketplace.json)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-%E2%89%A5%202.1.289-d97757)](https://claude.com/claude-code)
 [![License: MIT](https://img.shields.io/github/license/tomikng/prompt-quest?color=22c55e)](LICENSE)
 [![Grading cost](https://img.shields.io/badge/prompt%20grading-0%20tokens-38bdf8)](#privacy)
 [![Stars](https://img.shields.io/github/stars/tomikng/prompt-quest?style=flat&color=fde047)](https://github.com/tomikng/prompt-quest/stargazers)
 
-[Install](#install) · [How it plays](#how-it-plays) · [Skill tree](#skill-tree) · [Commands](#commands) · [FAQ](#faq)
+[Install](#install) · [How it plays](#how-it-plays) · [Skill tree](#skill-tree) · [Commands](#commands) · [📖 Full guide](HELP.md)
 
 </div>
 
@@ -26,7 +26,7 @@ Most wasted tokens come from vague prompts: Claude has to search for the file yo
 - 🎯 **Every prompt gets a rank, S to F.** Name the file, say why, say what done means: you climb. "fix it": you fall.
 - 💡 **Tips built from what actually happened.** "Next time point to `src/auth.ts` directly. Claude made 6 reads to find it."
 - 🪙 **Token sense.** Cache hits, lean replies and a session budget, shown live above your prompt.
-- 📜 **AI lore.** 24 cards with quizzes, from tokens and caching to RLHF, Constitutional AI, MoE and interpretability.
+- 📜 **AI lore.** 31 cards with quizzes: how Claude Code works under the hood (what each request carries, cache breakers, effort, `/clear`, auto-compact), plus tokens, caching, RLHF, Constitutional AI, MoE and interpretability.
 - 🎨 **Animated pixel art.** Your hero cheers when you level up, takes a fireball when a prompt ranks badly, and sulks in the rain after.
 
 ## See it
@@ -63,19 +63,51 @@ Most wasted tokens come from vague prompts: Claude has to search for the file yo
 
 ## Install
 
+Run these **one at a time** in Claude Code. Each is a separate command.
+
+**1. Add the marketplace**
+
 ```text
 /plugin marketplace add tomikng/prompt-quest
+```
+
+> [!TIP]
+> If you open the **Add Marketplace** dialog from the `/plugin` menu instead, paste only `tomikng/prompt-quest` into the box.
+
+**2. Install the plugin**
+
+```text
 /plugin install prompt-quest@prompt-quest
 ```
 
-Then type **`/quest`**.
+**3. Play**
+
+```text
+/quest
+```
+
+<details>
+<summary>Prefer the shell?</summary>
+
+```bash
+claude plugin marketplace add tomikng/prompt-quest
+claude plugin install prompt-quest@prompt-quest
+```
+
+Then start `claude` and type `/quest`.
+</details>
 
 > [!NOTE]
 > Requires Claude Code **2.1.289+** (function-hook plugins, an early-access API).
 > Pixel art draws in the terminal. Other surfaces get a text version.
 > The side pane docks beside the transcript when the terminal is at least 144 columns wide.
 
-Update later with `claude plugin update prompt-quest@prompt-quest`.
+**Update** later from a shell:
+
+```bash
+claude plugin marketplace update prompt-quest
+claude plugin update prompt-quest@prompt-quest
+```
 
 ## How it plays
 
@@ -97,6 +129,12 @@ Each prompt you type is graded on your machine with simple heuristics. No model 
 
 **Questions are graded differently.** You ask because you don't know, so a question is never penalized for not naming a file, a reason or a finish line. A clear question is 💎 B (+10), and one grounded in a file, an error or a screenshot is ⭐ A (+20). Replies to Claude like "yes", "yes push them" or "no, keep it" are neutral.
 
+**`/quest rules`** shows all of this visually, with your last prompt broken down signal by signal:
+
+<img src="assets/pane-rules.png" alt="Rules tab: last prompt breakdown, rank ladder, turn bonuses" width="100%">
+
+The full rules, with worked examples, are in the [📖 Player's Guide](HELP.md#how-a-prompt-is-ranked).
+
 ### Turn bonuses
 
 | Event | XP |
@@ -105,6 +143,7 @@ Each prompt you type is graded on your machine with simple heuristics. No model 
 | Reply under 600 output tokens | +5 |
 | Interrupted turn | −5 |
 | Reply over 8k output tokens | −5 |
+| `/clear` after 50k+ tokens of history | +10 |
 | Lore card read · quiz answered right · daily quest done | +15 · +25 · +50 |
 
 ### Levels go both ways
@@ -134,11 +173,21 @@ One skill point per level. Tiers unlock in order within a branch. Perks that cha
 
 Your class (and your hero's look) follows the branch you've invested in most.
 
+## Fair play
+
+Ranking runs locally, so cheating can't be made impossible, only pointless:
+- Repeated prompts earn 0 XP.
+- Short keyword-stuffed prompts are capped at B.
+- XP needs real API turns.
+
+The grader is plain pattern matching, so there's no model to prompt-inject. See [Fair play](HELP.md#fair-play).
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `/quest` | Open the pane (tabs Hero, Skills, Quests, Lore on keys `1`–`4`) |
+| `/quest` | Open the pane (tabs Hero, Skills, Quests, Lore, Rules on keys `1`–`5`) |
+| `/quest rules` | How ranking works, visually, with your last prompt broken down |
 | `/quest skills` · `quests` · `lore` | Open a specific tab |
 | `/quest close` | Close the pane (or press **Close** / `x`) |
 | `/quest band` | Show or hide the status band above the prompt |

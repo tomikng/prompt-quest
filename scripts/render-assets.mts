@@ -2,7 +2,7 @@
 // Usage: node --experimental-strip-types scripts/render-assets.mts <outDir>
 // Writes PPM frames; scripts/render-assets.sh turns them into PNG/GIF.
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { barCells, heroScene, rankBadge } from '../plugins/prompt-quest/hooks/art.ts'
+import { barCells, heroScene, rankBadge, scoreMeterCells } from '../plugins/prompt-quest/hooks/art.ts'
 
 const out = process.argv[2] ?? 'build'
 mkdirSync(out, { recursive: true })
@@ -96,4 +96,18 @@ for (let t = 0; t < 20; t++) {
     }
   })() }
   ppm(`drain-${String(t).padStart(2, '0')}`, [{ cv, x: 1, y: 1 }], 22, 4)
+}
+
+// Score meter still for the Rules mockup (score 2 → B)
+{
+  const c = scoreMeterCells(2, 0)
+  const bytes = Buffer.from(c.cells, 'base64')
+  const cv = { w: c.columns, h: c.rows * 2, get: (x: number, y: number) => {
+    const o = (Math.floor(y / 2) * c.columns + x) * 12
+    const cp = bytes.readUInt32LE(o), fg = bytes.readUInt32LE(o + 4), bg = bytes.readUInt32LE(o + 8)
+    if (cp === 0x20) return -1
+    if (cp === 0x2584) return y % 2 ? fg : -1
+    return y % 2 ? (bg === 0x01000000 ? -1 : bg) : fg
+  } }
+  ppm('still-meter', [{ cv, x: 0, y: 0 }], cv.w, cv.h)
 }
