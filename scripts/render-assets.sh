@@ -6,6 +6,8 @@ tmp=$(mktemp -d)
 node --experimental-strip-types scripts/render-assets.mts "$tmp" 2>/dev/null
 magick -delay 18 -loop 0 "$tmp"/hero-*.ppm -filter point -resize 1200% -layers Optimize assets/hero.gif
 magick -delay 25 -loop 0 "$tmp"/classes-*.ppm -filter point -resize 600% -layers Optimize assets/classes.gif
+magick -delay 20 -loop 0 "$tmp"/hit-*.ppm -filter point -resize 1000% -layers Optimize assets/hit.gif
+magick -delay 20 -loop 0 "$tmp"/drain-*.ppm -filter point -resize 2000x1000% -layers Optimize assets/xp-drain.gif
 magick -delay 9 -loop 0 "$tmp"/ranks-*.ppm -filter point -resize 800% -layers Optimize assets/ranks.gif
 for f in "$tmp"/still-*.ppm; do magick "$f" "${f%.ppm}.png"; done
 cp scripts/mockups/*.html scripts/mockups/*.css "$tmp"/

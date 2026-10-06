@@ -50,6 +50,15 @@ Most wasted tokens come from vague prompts: Claude has to search for the file yo
 </tr>
 </table>
 
+**Bad prompt? You take a hit.** A fireball knocks your hero back, the XP you lost floats up as a damage number, and the lost part of the XP bar above your prompt blinks red, then drains away:
+
+<table>
+<tr>
+<td width="50%" align="center"><img src="assets/hit.gif" alt="Hero hit by a fireball, -10 damage number floats up, then rain" width="300"><br><sub>Fireball → impact → −10 → rain</sub></td>
+<td width="50%" align="center"><img src="assets/xp-drain.gif" alt="XP bar: the lost part blinks red, then drains" width="400"><br><sub>The status band's XP bar losing 20 XP</sub></td>
+</tr>
+</table>
+
 <sub>The pixel art above is rendered by the plugin's own drawing code (<code>scripts/render-assets.sh</code>). The terminal frames are faithful recreations of the plugin's layout and colors.</sub>
 
 ## Install

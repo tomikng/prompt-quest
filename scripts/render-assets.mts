@@ -2,7 +2,7 @@
 // Usage: node --experimental-strip-types scripts/render-assets.mts <outDir>
 // Writes PPM frames; scripts/render-assets.sh turns them into PNG/GIF.
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { heroScene, rankBadge } from '../plugins/prompt-quest/hooks/art.ts'
+import { barCells, heroScene, rankBadge } from '../plugins/prompt-quest/hooks/art.ts'
 
 const out = process.argv[2] ?? 'build'
 mkdirSync(out, { recursive: true })
@@ -72,4 +72,28 @@ for (let f = 0; f < 16; f++) {
     } }
     ppm(`still-bar-${name}`, [{ cv, x: 0, y: 0 }], w, 2)
   }
+}
+
+// Close-up of a hit: fireball, impact, damage number, then the rain
+for (let t = 0; t < 24; t++) {
+  const cv = heroScene('scribe', t < 16 ? 'hit' : 'down', t, { t, dmg: -10 })
+  ppm(`hit-${String(t).padStart(2, '0')}`, [{ cv, x: 0, y: 0 }], cv.w, cv.h)
+}
+
+// The status band's XP bar losing XP: lost part blinks red, then drains
+for (let t = 0; t < 20; t++) {
+  const into = 45, need = 100, dmg = 20
+  const drain = t < 8 ? 1 : Math.max(0, 1 - (t - 8) / 8)
+  const lost = t < 16 ? (dmg / need) * drain : 0
+  const cv = { w: 20, h: 2, get: (() => {
+    const c = barCells(into / need, 20, 0x8b5cf6, 0xf472b6, t, lost)
+    const bytes = Buffer.from(c.cells, 'base64')
+    return (x: number, y: number) => {
+      const o = x * 12
+      const cp = bytes.readUInt32LE(o), fg = bytes.readUInt32LE(o + 4), bg = bytes.readUInt32LE(o + 8)
+      if (cp === 0x20) return -1
+      return y === 0 ? fg : bg
+    }
+  })() }
+  ppm(`drain-${String(t).padStart(2, '0')}`, [{ cv, x: 1, y: 1 }], 22, 4)
 }
