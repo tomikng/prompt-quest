@@ -144,7 +144,7 @@ export const register: Register = on => {
     if (stored) await update($, saveA, () => ({ ...FRESH, ...stored, stats: { ...FRESH.stats, ...stored.stats } }))
     await $.command.register({
       name: 'quest',
-      description: 'Claude Quest: hero, skills, quests, lore · /quest [skills|quests|lore|band|budget <n>|oracle <topic>]',
+      description: 'Prompt Quest: hero, skills, quests, lore · /quest [skills|quests|lore|close|band|budget <n>|oracle <topic>]',
     })
     $.clock.every(FRAME_MS, () => {
       frame += 1
@@ -277,7 +277,7 @@ export const register: Register = on => {
       .map(id => skill(id)?.perk)
       .filter((p): p is string => !!p)
     if (!perks.length) return r
-    const text = `# Claude Quest perks (the user unlocked these output styles)\n${perks.map(p => `- ${p}`).join('\n')}`
+    const text = `# Prompt Quest perks (the user unlocked these output styles)\n${perks.map(p => `- ${p}`).join('\n')}`
     return { sections: [...r.sections, { id: 'prompt-quest:perks', text, scope: 'session' as const }] }
   })
 
@@ -289,6 +289,11 @@ export const register: Register = on => {
     const open = async (tab: Tab) => {
       await update($, tabA, () => tab)
       await $.ui.open({ id: PANE, title: 'Prompt Quest' })
+    }
+    if (/^(close|hide|off|x)$/.test(sub) || /\b(close|hide)\b/.test(arg)) {
+      paneLive = false
+      await $.ui.close({ id: PANE })
+      return { text: 'Prompt Quest closed. /quest opens it again.' }
     }
     if (sub === 'band') {
       const s = await commit($, cur => ({ ...cur, showBand: !cur.showBand }))
@@ -307,7 +312,7 @@ export const register: Register = on => {
     }
     const tab: Tab = sub === 'skills' || sub === 'quests' || sub === 'lore' ? sub : 'hero'
     await open(tab)
-    return { text: 'Claude Quest opened.' }
+    return { text: 'Prompt Quest opened. /quest close hides it.' }
   })
 
   // ── band above the prompt ───────────────────────────────────────────────
@@ -380,6 +385,8 @@ export const register: Register = on => {
           <Button key={`tab-${id}`} label={label} hotkey={String(i + 1)}
             variant={tab === id ? 'primary' : 'secondary'} onPress={() => update($, tabA, () => id)} />
         ))}
+        <Button key="close" label="Close" hotkey="x" role="dismiss"
+          onPress={async () => { paneLive = false; await $.ui.close({ id: PANE }) }} />
       </Box>
     )
 

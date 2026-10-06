@@ -30,6 +30,7 @@ Requires a Claude Code build with function-hook plugins (2.1.289 or newer). The 
 | --- | --- |
 | `/quest` | Open the pane (tabs: Hero, Skills, Quests, Lore; keys 1–4) |
 | `/quest skills` / `quests` / `lore` | Open a specific tab |
+| `/quest close` | Close the pane (or press the Close button, hotkey x) |
 | `/quest band` | Show or hide the status band above the prompt |
 | `/quest budget 50k` | Set the session output-token budget (Budget Ward) |
 | `/quest oracle <topic>` | Conjure a new lore card via a small Haiku call (Oracle's Eye) |

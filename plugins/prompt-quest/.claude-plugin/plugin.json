@@ -1,6 +1,6 @@
 {
   "name": "prompt-quest",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "author": { "name": "loluelifi" },
   "description": "An RPG layer for Claude Code: earn XP from sharp prompts and lean token use, spend skill points on perks, and learn AI lore.",
   "types": "./types/index.d.ts"
