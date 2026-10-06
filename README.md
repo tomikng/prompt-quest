@@ -1,64 +1,176 @@
+<div align="center">
+
+<img src="assets/classes.gif" alt="The four hero classes: Wanderer, Scribe, Alchemist and Sage" width="720">
+
 # ⚔️ Prompt Quest
 
-An RPG layer for [Claude Code](https://claude.com/claude-code). Get better at prompting, reading output and spending tokens, and learn how modern AI works along the way.
+**An RPG layer for [Claude Code](https://claude.com/claude-code).**
+Level up by writing sharper prompts, spending tokens wisely and learning how modern AI works.
 
-- **Prompt ranks S–F.** Every prompt you type is graded locally (no tokens spent). S/A/B earn XP, D/F lose it. Yes, you can level *down*.
-- **Tips that teach.** Each rank comes with concrete advice built from what actually happened in the turn ("next time point to `src/auth.ts` directly, Claude made 6 reads to find it"; "done when `npm test` passes"), a rewrite of your own prompt, and token-spend tips (heavy output, cold cache, too many tool calls).
-- **Skill tree.** One point per level across three branches:
-  - 🪶 **Scribe** (read output better): TL;DR line, inline glossary, why-before-what, answer-first
-  - 🧪 **Alchemist** (spend tokens wisely): token ledger, cold-cache warnings, terse mode, session budget
-  - 🔮 **Sage** (learn AI): lore quizzes, advanced deck, inline lore notes, Oracle cards on any topic
-- **Dormant skills.** Drop below the level that covers your skills and the newest go to sleep until you climb back.
-- **Daily quests and streaks.**
-- **24 AI lore cards with quizzes**, from tokens and caching to KV cache, RLHF, Constitutional AI, MoE and interpretability.
-- **Animated pixel art** (terminal): a hero scene that changes with your class and celebrates or sulks with you, plus shining rank badges.
+[![Version](https://img.shields.io/badge/version-0.2.0-8b5cf6)](.claude-plugin/marketplace.json)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-%E2%89%A5%202.1.289-d97757)](https://claude.com/claude-code)
+[![License: MIT](https://img.shields.io/github/license/tomikng/prompt-quest?color=22c55e)](LICENSE)
+[![Grading cost](https://img.shields.io/badge/prompt%20grading-0%20tokens-38bdf8)](#privacy)
+[![Stars](https://img.shields.io/github/stars/tomikng/prompt-quest?style=flat&color=fde047)](https://github.com/tomikng/prompt-quest/stargazers)
+
+[Install](#install) · [How it plays](#how-it-plays) · [Skill tree](#skill-tree) · [Commands](#commands) · [FAQ](#faq)
+
+</div>
+
+---
+
+## Why
+
+Most wasted tokens come from vague prompts: Claude has to search for the file you meant, guess what "done" looks like, and write long answers you skim. Prompt Quest turns the habits that fix this into a game you play while you work:
+
+- 🎯 **Every prompt gets a rank, S to F.** Name the file, say why, say what done means: you climb. "fix it": you fall.
+- 💡 **Tips built from what actually happened.** "Next time point to `src/auth.ts` directly. Claude made 6 reads to find it."
+- 🪙 **Token sense.** Cache hits, lean replies and a session budget, shown live above your prompt.
+- 📜 **AI lore.** 24 cards with quizzes, from tokens and caching to RLHF, Constitutional AI, MoE and interpretability.
+- 🎨 **Animated pixel art.** Your hero cheers when you level up and sulks in the rain when you level down.
+
+## See it
+
+**A sharp prompt** earns XP, with a live token ledger:
+
+<img src="assets/band-strong.png" alt="Status band after a rank S prompt: +40 XP, token ledger" width="100%">
+
+**A vague prompt** costs XP and tells you exactly what to add, with your own prompt rewritten:
+
+<img src="assets/band-weak.png" alt="Status band after a rank D prompt: missing chips and a suggested rewrite" width="100%">
+
+**`/quest`** opens the side pane with your hero, stats, last rank and chronicle:
+
+<img src="assets/pane-hero.png" alt="Hero tab: animated pixel-art hero, stats, rank badge and chronicle" width="100%">
+
+<table>
+<tr>
+<td width="50%" align="center"><img src="assets/hero.gif" alt="Hero animation: idle, level up, level down" width="320"><br><sub>Idle → level up ✨ → level down 🌧</sub></td>
+<td width="50%" align="center"><img src="assets/ranks.gif" alt="Animated rank badges S A B C D F" width="400"><br><sub>Rank badges S · A · B · C · D · F</sub></td>
+</tr>
+</table>
+
+<sub>The pixel art above is rendered by the plugin's own drawing code (<code>scripts/render-assets.sh</code>). The terminal frames are faithful recreations of the plugin's layout and colors.</sub>
 
 ## Install
 
-```
+```text
 /plugin marketplace add tomikng/prompt-quest
 /plugin install prompt-quest@prompt-quest
 ```
 
-Then type `/quest`.
+Then type **`/quest`**.
 
-Requires a Claude Code build with function-hook plugins (2.1.289 or newer). The pixel art needs the terminal. Other surfaces get the text version. The side pane docks at 144+ terminal columns.
+> [!NOTE]
+> Requires Claude Code **2.1.289+** (function-hook plugins, an early-access API).
+> Pixel art draws in the terminal. Other surfaces get a text version.
+> The side pane docks beside the transcript when the terminal is at least 144 columns wide.
+
+Update later with `claude plugin update prompt-quest@prompt-quest`.
+
+## How it plays
+
+### Prompt ranks
+
+Each prompt you type is graded on your machine with simple heuristics. No model call, no tokens.
+
+| What your prompt has | Points |
+| --- | --- |
+| Something concrete: a file, function, command, error text, or a screenshot | +2 |
+| A reason: *because…*, *so that…*, *the goal is…* | +1 |
+| A finish line: *should*, *must*, *tests pass*, *without…* | +1 |
+| A sensible length (12–250 words) | +1 |
+| Vague and tiny ("fix it", "doesn't work") | −2 |
+
+| Rank | 👑 S | ⭐ A | 💎 B | ⚪ C | 🔻 D | 💀 F |
+| --- | --- | --- | --- | --- | --- | --- |
+| XP | +30 | +20 | +10 | 0 | −10 | −20 |
+
+Short replies like "yes" or "continue" are neutral.
+
+### Turn bonuses
+
+| Event | XP |
+| --- | --- |
+| Cache hit ≥ 80% | +5 |
+| Reply under 600 output tokens | +5 |
+| Interrupted turn | −5 |
+| Reply over 8k output tokens | −5 |
+| Lore card read · quiz answered right · daily quest done | +15 · +25 · +50 |
+
+### Levels go both ways
+
+XP can drop below a level threshold. If you fall below the number of skills you've learned, your newest skills go **dormant 💤** until you climb back.
+
+### Concrete tips
+
+After every turn, Prompt Quest looks at what Claude actually did, including files read and edited, searches run and test commands used, and turns it into advice:
+
+- 🎯 **Missing:** chips showing which part your prompt lacked
+- ✏️ **Try:** your prompt rewritten with the real file and the real check filled in
+- 🪙 Token tips: heavy output, a cold cache, too many tool calls, a context getting large
+
+## Skill tree
+
+One skill point per level. Tiers unlock in order within a branch. Perks that change Claude's replies can be toggled on and off.
+
+<img src="assets/pane-skills.png" alt="Skills tab with the three branches" width="100%">
+
+| Tier | 🪶 Scribe *(read output better)* | 🧪 Alchemist *(spend tokens wisely)* | 🔮 Sage *(learn AI)* |
+| --- | --- | --- | --- |
+| 1 | **TL;DR Rune**: replies end with a one-line TL;DR | **Coin Purse**: token ledger above the prompt | **Oracle Quiz**: quizzes on lore cards |
+| 2 | **Glossary Lens**: jargon defined inline | **Cache Sight**: warns when the cache has gone cold | **Deep Archives**: the advanced lore deck |
+| 3 | **Why-Trace**: the reason before every change | **Terse Tongue**: concise replies, fewer output tokens | **Concept Spotter**: a "📜 Lore:" note when an AI concept comes up |
+| 4 | **Answer-First**: lead with the result | **Budget Ward**: session budget with 50/80/100% alarms | **Oracle's Eye**: `/quest oracle <topic>` conjures new cards |
+
+Your class (and your hero's look) follows the branch you've invested in most.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `/quest` | Open the pane (tabs: Hero, Skills, Quests, Lore; keys 1–4) |
-| `/quest skills` / `quests` / `lore` | Open a specific tab |
-| `/quest close` | Close the pane (or press the Close button, hotkey x) |
+| `/quest` | Open the pane (tabs Hero, Skills, Quests, Lore on keys `1`–`4`) |
+| `/quest skills` · `quests` · `lore` | Open a specific tab |
+| `/quest close` | Close the pane (or press **Close** / `x`) |
 | `/quest band` | Show or hide the status band above the prompt |
 | `/quest budget 50k` | Set the session output-token budget (Budget Ward) |
-| `/quest oracle <topic>` | Conjure a new lore card via a small Haiku call (Oracle's Eye) |
+| `/quest oracle <topic>` | New lore card via a small Haiku call (Oracle's Eye) |
 | `/quest reset confirm` | Start over at level 1 |
-
-## How XP works
-
-| Source | XP |
-| --- | --- |
-| Prompt rank S / A / B / C / D / F | +30 / +20 / +10 / 0 / −10 / −20 |
-| Cache hit ≥ 80% | +5 |
-| Reply under 600 output tokens | +5 |
-| Interrupted turn | −5 |
-| Reply over 8k output tokens | −5 |
-| Lore card read / quiz right / quest done | +15 / +25 / +50 |
-
-A prompt ranks up when it names something concrete (a file, function, command or error), states *why*, and says what *done* looks like.
 
 ## Privacy
 
-Everything runs locally. Prompts are graded with heuristics on your machine, and progress is stored in the plugin's local store. The only model call is the optional `/quest oracle`.
+- Prompt grading and tips run locally, with no network calls.
+- Progress is saved in the plugin's own store, a JSON file under `~/.claude/plugins/store/`.
+- The only model call is the optional `/quest oracle`, which uses a few hundred Haiku tokens.
+
+## FAQ
+
+**Does it change how Claude behaves?** Only if you learn and enable a perk (TL;DR Rune, Terse Tongue and so on). Perks add a short section to the system prompt, and toggling one rebuilds the prompt cache once.
+
+**Will it cost me tokens?** No, apart from the optional Oracle. Perks like Terse Tongue usually *save* tokens.
+
+**Can I hide it?** `/quest close` closes the pane and `/quest band` hides the status band.
 
 ## Development
 
-```
-claude --plugin-dir ./plugins/prompt-quest
-claude plugin validate ./plugins/prompt-quest
-claude plugin test ./plugins/prompt-quest
+```bash
+claude --plugin-dir ./plugins/prompt-quest      # run it from source
+claude plugin validate ./plugins/prompt-quest   # check the manifest and hooks
+claude plugin test ./plugins/prompt-quest       # run the tests
+./scripts/render-assets.sh                      # regenerate README images
 ```
 
-MIT licensed.
+```text
+plugins/prompt-quest/
+├── hooks/register.tsx   # hooks, pane, status band, animation loop
+├── hooks/data.ts        # skills, ranking rules, tips, quests, lore
+├── hooks/art.ts         # pixel art: hero scenes, rank badges, bars
+├── types/index.d.ts     # state contract
+└── tests/
+```
+
+Issues and PRs are welcome, especially new lore cards and pixel art.
+
+## License
+
+[MIT](LICENSE) © tomikng
