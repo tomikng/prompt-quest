@@ -343,7 +343,7 @@ export function barCells(frac: number, width: number, from: Px, to: Px, f = 0, l
 
 // ── Score meter for the Rules view: F D C B A S segments with a marker ────
 
-export function scoreMeterCells(score: number | null, f = 0) {
+export function scoreMeterCells(rank: Rank | null, f = 0) {
   const order: Rank[] = ['F', 'D', 'C', 'B', 'A', 'S']
   const seg = 6
   const cv = new Canvas(seg * order.length, 4)
@@ -355,8 +355,8 @@ export function scoreMeterCells(score: number | null, f = 0) {
       cv.set(i * seg + x, 3, edge)
     }
   })
-  if (score !== null) {
-    const i = score >= 4 ? 5 : score <= -1 ? 0 : score + 1
+  if (rank !== null) {
+    const i = order.indexOf(rank)
     const cx = i * seg + Math.floor(seg / 2) - 1
     const glow = f % 4 < 2 ? 0xffffff : 0xfde047
     cv.sprite(['#..#', '.##.'], cx - 1, 0, { '#': glow })

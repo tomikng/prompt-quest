@@ -6,7 +6,7 @@ import { barCells, heroScene, HIT_FRAMES, rankBadge, RANK_GLYPH, scoreMeterCells
 import type { HeroClass, Mood } from './art'
 import {
   BRANCHES, LORE, PROMPT_TIPS, QUEST_XP, SKILLS,
-  bashFiles, checkOf, concretize, emptyTrace, grade, isSearch, promptHash, RANK_XP, levelOf, questsFor, RANK_COLOR, relPath, skill, titleOf, turnTips,
+  bashFiles, checkOf, concretize, emptyTrace, grade, isSearch, LADDER, promptHash, RANK_XP, levelOf, questsFor, RANK_COLOR, relPath, skill, titleOf, turnTips,
 } from './data'
 
 const PANE = 'prompt-quest'
@@ -164,6 +164,8 @@ export const register: Register = on => {
   // Model and context size of the last main turn: for cache-break and /clear rules.
   let lastModel: string | null = null
   let lastContext = 0
+  // Files the last turn touched, so a follow-up naming one counts as building on it.
+  let lastFiles: string[] = []
 
   on('session.start', async ($, e, next) => {
     const stored = (await $.store.get('save')) as Partial<Save> | undefined
@@ -199,7 +201,9 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     if (e.origin.kind !== 'composer' || e.text.trim().startsWith('/')) return next(e)
     const now = await $.clock.now()
-    let g = grade(e.text, e.attachments?.length ?? 0)
+    const before = await read($, sessionA)
+    const recent = before.lastTurnAt > 0 && (await $.clock.now()) - before.lastTurnAt < 30 * 60_000
+    let g = grade(e.text, e.attachments?.length ?? 0, { recent, files: lastFiles })
     // Repeating a prompt earns nothing: only a hash is kept, never the text.
     const hash = promptHash(e.text)
     const seen = await read($, saveA)
@@ -259,6 +263,7 @@ export const register: Register = on => {
     const input = e as unknown as Record<string, unknown>
     const path = typeof input.file_path === 'string' ? input.file_path
       : typeof input.notebook_path === 'string' ? input.notebook_path : null
+    if (name === 'EnterPlanMode' || name === 'ExitPlanMode') trace.planned = true
     if (name === 'Read' && path) trace.reads[path] = (trace.reads[path] ?? 0) + 1
     else if ((name === 'Edit' || name === 'Write' || name === 'MultiEdit' || name === 'NotebookEdit') && path) trace.edits.push(path)
     else if (name === 'Grep' || name === 'Glob') trace.searches += 1
@@ -290,6 +295,7 @@ export const register: Register = on => {
     if (g && (g.rank === 'S' || g.rank === 'A')) bumps.push('sharp')
     if (g?.reasons.includes('purpose stated')) bumps.push('purpose')
     if (e.reason === 'aborted') { delta -= 5; notes.push('abandoned turn −5') }
+    if (trace.planned) { delta += 5; notes.push('plan mode +5') }
     let spendTips: string[] = []
     if (u) {
       const total = u.input_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens
@@ -301,8 +307,10 @@ export const register: Register = on => {
       lastContext = total
       spendTips = turnTips({ out: u.output_tokens, ratio, total, tools, aborted: e.reason === 'aborted', modelSwitch })
       if (ratio >= 0.8 && total > 2000) { delta += 5; notes.push('cache hit +5'); bumps.push('cache') }
-      if (u.output_tokens < 600) { delta += 5; notes.push('lean reply +5'); bumps.push('lean') }
-      if (u.output_tokens > 8000) { delta -= 5; notes.push('heavy output −5') }
+      // Output size only matters for text-only turns: code changes are the work, not chatter.
+      const textOnly = trace.edits.length === 0
+      if (textOnly && u.output_tokens < 600) { delta += 5; notes.push('lean reply +5'); bumps.push('lean') }
+      if (textOnly && u.output_tokens > 8000) { delta -= 5; notes.push('heavy output −5') }
     }
     const s = await award($, delta, g ? `Rank ${g.rank} prompt` : 'turn', bumps)
     await commit($, cur => u ? {
@@ -325,6 +333,7 @@ export const register: Register = on => {
       },
     }))
     if (g) look = { ...look, rank: g.rank }
+    lastFiles = [...new Set([...trace.edits, ...Object.keys(trace.reads)].map(f => f.split('/').pop() ?? f))].slice(0, 20)
     if (g) $.ui.toast(`${RANK_GLYPH[g.rank]} Rank ${g.rank} · ${delta >= 0 ? '+' : ''}${delta} XP${g.xp < 10 ? ` · 💡 ${g.tip}` : ''}`)
     if (isActive(s, 'budget') && s.budget > 0) {
       const pct = (ss.outTok / s.budget) * 100
@@ -737,12 +746,12 @@ function rulesTab($: $T, e: RenderE, ss: Session) {
 
   const ladder = (
     <Box flexDirection="column">
-      {Raster && <Raster key="meter" {...scoreMeterCells(mode === 'task' ? (g?.score ?? null) : null, frame)} />}
+      {Raster && <Raster key="meter" {...scoreMeterCells(g ? g.rank : null, frame)} />}
       <Box>
         {order.map(r => <Text color={RANK_COLOR[r]} bold>{`${r}`.padEnd(6)}</Text>)}
       </Box>
       <Box>
-        {order.map((r, i) => <Text dimColor>{(i === 0 ? '≤−1' : i === 5 ? '4+' : String(i - 1)).padEnd(6)}</Text>)}
+        {LADDER.map(l => <Text dimColor>{l.points.padEnd(6)}</Text>)}
       </Box>
       <Box>
         {order.map(r => <Text color={RANK_COLOR[r]}>{sign(RANK_XP[r]).padEnd(6)}</Text>)}
@@ -794,8 +803,9 @@ function rulesTab($: $T, e: RenderE, ss: Session) {
       <Box flexDirection="column">
         <Text bold>Then the turn adds</Text>
         <Text>🪙 <Text color="#5fff87">+5</Text> cache hit: ≥80% of input read from the prompt cache (real API counts)</Text>
-        <Text>🪶 <Text color="#5fff87">+5</Text> lean reply: under 600 output tokens</Text>
-        <Text>✋ <Text color="#ff5f5f">−5</Text> interrupted turn · 🐘 <Text color="#ff5f5f">−5</Text> reply over 8k output tokens</Text>
+        <Text>🗺 <Text color="#5fff87">+5</Text> Plan mode: Claude planned before changing anything</Text>
+        <Text>🪶 <Text color="#5fff87">+5</Text> lean reply: under 600 output tokens (text-only turns)</Text>
+        <Text>✋ <Text color="#ff5f5f">−5</Text> interrupted turn · 🐘 <Text color="#ff5f5f">−5</Text> text reply over 8k tokens</Text>
         <Text>🔀 <Text dimColor>tip</Text> cache break: model switched mid-session and the cache went cold (no XP lost; opusplan does this on purpose)</Text>
         <Text>🧹 <Text color="#5fff87">+10</Text> /clear after 50k+ tokens of history (starting fresh is cheaper)</Text>
       </Box>
@@ -858,7 +868,7 @@ async function report($: $T, kind: 'rank' | 'idea', comment: string, withPrompt:
       `Missing: ${(g.missing ?? []).join(', ') || 'none'}`,
       `Notes: ${last.notes.join(', ')}`,
       `Words: ${(last.prompt ?? '').split(/\s+/).filter(Boolean).length}`,
-      `Plugin 0.3.0 · Claude Code ${version}`,
+      `Plugin 0.4.0 · Claude Code ${version}`,
     ].join('\n'))
     if (comment) params.set('why', comment)
     if (withPrompt && last.prompt) params.set('prompt', last.prompt.slice(0, 1500))

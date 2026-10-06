@@ -105,24 +105,46 @@ export const RANK_COLOR: Record<Rank, string> = {
 }
 
 const QUESTION = /\?\s*$|^(where|what|how|why|when|who|which|is|are|can|could|do|does|did|should|would|will|whats|what's|wheres|where's)\b/i
-const ACK = /^(y|yes|yeah|yep|yup|ok|okay|sure|go|go ahead|continue|proceed|do it|thanks|thank you|ty|no|nope|nah|lgtm|ship it|please|sounds good|perfect|great|cool|nice|agreed|correct|right|exactly)\b/i
+const ACK = /^(let'?s (do it|go)|lets (do it|go)|y|yes|yeah|yep|yup|ok|okay|sure|go|go ahead|continue|proceed|do it|thanks|thank you|ty|no|nope|nah|lgtm|ship it|please|sounds good|perfect|great|cool|nice|agreed|correct|right|exactly)\b/i
 /** Answers to a question Claude asked: "yes push them", "no, keep it", "ok do that". Judged neutral. */
 const isReply = (t: string, words: number) => words <= 8 && ACK.test(t) && !/\?\s*$/.test(t)
 const VAGUE = /\b(fix (it|this)|doesn'?t work|not working|make it better|do something|it'?s broken|help)\b/i
-const ANCHOR = /`[^`]+`|(^|\s)[\w.-]*\/[\w./-]+|\b[\w-]+\.(ts|tsx|js|py|rs|go|md|json|lua|sh|toml|yaml|yml|css|html|c|cpp|h)\b|\b\w+\(\)|:\d+\b|https?:\/\//
-const PURPOSE = /\b(because|so that|goal|in order to|i need|i want|the aim|the point is|ideally)\b/i
-const CRITERIA = /\b(should|must|expect|make sure|verify|test|without|don'?t|do not|only|instead of|until|at most|at least)\b/i
+const ANCHOR = /`[^`]+`|(^|\s)[\w.-]*\/[\w./-]+|\b[\w-]+\.(ts|tsx|js|jsx|py|rs|go|md|json|lua|sh|toml|yaml|yml|css|html|c|cpp|h|java|rb|kt|swift|sql)\b|\b\w+\(\)|:\d+\b|https?:\/\/|@[\w./-]+/
+const PURPOSE = /\b(because|so that|goal|in order to|i need|i want|the aim|the point is|ideally|users? (can|can't|cannot|get|see))\b/i
+const DONE = /\b(should|must|expect(ed)?|make sure|until|done when|acceptance|so it (works|returns|shows)|returns?|instead of)\b/i
+const VERIFY = /\b(run (the )?(tests?|build|linter|lint|app)|tests?\b.{0,25}\b(pass|passes|green)|verify|check (that|it|the)|lint|typecheck|type-check|build (passes|succeeds)|reproduce|compare (it )?(with|to)|screenshot|curl)\b/i
+const SCOPE = /\b(only|don'?t|do not|without|keep|leave .{1,30} (alone|as is)|avoid|at most|at least|limit(ed)? to|no new|just the|scope)\b/i
+const PLAN = /\b(plan|propose|outline|options|approach(es)?|before (you )?(code|coding|implement|implementing|change|changing|edit|editing|making|writing)|ask me|interview me|think (it )?through|step by step|trade-?offs?)\b/i
+const EXAMPLE = /```|\b(e\.g\.|for example|for instance|like this|such as|example:)/i
+/** Words that lean on what was just being worked on: "do the same for…", "now also…", "the error". */
+const FOLLOW = /\b(it|this|that|these|those|same|also|again|too|as well|instead|now|next|then|above|previous|rest|remaining|the (error|test|bug|change|fix|diff|output|page|file|function))\b/i
+
+/** Points → rank. S needs 5+, so the top rank goes to prompts that are also verifiable, scoped or planned. */
+export function rankFor(score: number): Rank {
+  return score >= 5 ? 'S' : score >= 3 ? 'A' : score === 2 ? 'B' : score === 1 ? 'C' : score === 0 ? 'D' : 'F'
+}
+/** The ladder as the Rules view draws it. */
+export const LADDER: { rank: Rank; points: string }[] = [
+  { rank: 'F', points: '≤−1' }, { rank: 'D', points: '0' }, { rank: 'C', points: '1' },
+  { rank: 'B', points: '2' }, { rank: 'A', points: '3–4' }, { rank: 'S', points: '5+' },
+]
 
 const TIP = {
   anchor: 'Point at something concrete: a file (`src/auth.ts`), a function (`refresh()`), a command, or the exact error text.',
   purpose: 'Add the why ("because users get logged out") so Claude can pick the right trade-off.',
   criteria: 'Say what done looks like: "tests pass", "no new dependencies", "keep the public API the same".',
+  verify: 'Give Claude a way to check its own work: "run npm test", "compare with the screenshot", "curl the endpoint".',
+  scope: 'Set boundaries: "only touch src/auth.ts", "don’t change the public API", "no new dependencies".',
+  plan: 'For a bigger change, ask for a plan first ("propose a plan before editing") or switch to Plan mode (shift+tab).',
   terse: 'Give at least one full sentence. Very short prompts make Claude guess, and guesses cost extra turns.',
   vague: 'Replace "fix it" with what you saw and what you expected instead.',
-  wall: 'Lead with the ask in the first line, then the context. Put long logs in a file and reference its path.',
+  wall: 'Lead with the ask in the first line, then the context. Long specs are fine; give them headings or bullets.',
 }
 
-export function grade(text: string, attachments = 0): Grade {
+/** What the session knows when a prompt arrives: was there a turn just now, and which files did it touch. */
+export type GradeContext = { recent: boolean; files: string[] }
+
+export function grade(text: string, attachments = 0, ctx: GradeContext = { recent: false, files: [] }): Grade {
   const hasImage = attachments > 0 || /\[Image #\d+\]/.test(text)
   const t = text.replace(/\[Image #\d+\]/g, '').trim()
   const words = t.split(/\s+/).filter(Boolean).length
@@ -133,7 +155,7 @@ export function grade(text: string, attachments = 0): Grade {
   // Questions are judged on clarity, not on file/why/done: you ask because you don't know.
   if (QUESTION.test(t) && words <= 80) {
     const concrete = ANCHOR.test(t) || hasImage
-    if (words < 3 && !concrete) {
+    if (words < 3 && !concrete && !ctx.recent) {
       const tip = 'Say what the question is about ("where is X saved?") so the answer doesn’t have to guess.'
       return { rank: 'C', xp: 0, reasons: ['question', 'very short'], tip, tips: [tip], missing: [], upgrade: null, mode: 'question' }
     }
@@ -144,48 +166,84 @@ export function grade(text: string, attachments = 0): Grade {
       tip, tips: concrete ? [] : [tip], missing: [], upgrade: null, mode: 'question',
     }
   }
+
+  const lower = t.toLowerCase()
+  const anchored = ANCHOR.test(t) || hasImage
+  // A follow-up leans on the task in progress, which is as good as naming it, just shorter.
+  // In an active session, a short instruction leans on the shared context even without "it"/"same".
+  const followUp = !anchored && ctx.recent && words <= 40 &&
+    (FOLLOW.test(t) || ctx.files.some(f => f.length > 2 && lower.includes(f.toLowerCase())) || words >= 4)
+  const structured = /^\s*([-*#]|\d+\.)\s/m.test(t)
+  const flags = {
+    concrete: anchored,
+    follow: followUp,
+    purpose: PURPOSE.test(t),
+    done: DONE.test(t),
+    verify: VERIFY.test(t),
+    scope: SCOPE.test(t),
+    plan: PLAN.test(t),
+    example: EXAMPLE.test(t),
+    length: words >= 12 && words <= 600,
+    vague: !followUp && words < 8 && VAGUE.test(t),
+    terse: !followUp && words < 4 && !(words < 8 && VAGUE.test(t)),
+    wall: words > 800 && !t.includes('```') && !structured,
+  }
+  const parts: GradePart[] = [
+    { label: 'Concrete: a file, function, command, error or screenshot', pts: 2, hit: flags.concrete },
+    { label: 'Follow-up: builds on the task in progress', pts: 1, hit: flags.follow },
+    { label: 'Why: because…, so that…, the goal is…', pts: 1, hit: flags.purpose },
+    { label: 'Done means: should…, must…, until…, returns…', pts: 1, hit: flags.done },
+    { label: 'Verifiable: run the tests, check that…, screenshot, curl', pts: 1, hit: flags.verify },
+    { label: 'Scoped: only…, don’t…, without…, keep…', pts: 1, hit: flags.scope },
+    { label: 'Plan first: propose a plan, options, before editing…', pts: 1, hit: flags.plan },
+    { label: 'Example: e.g., for example, a code block', pts: 1, hit: flags.example },
+    { label: 'Length: 12–600 words', pts: 1, hit: flags.length },
+    { label: 'Vague and tiny ("fix it", "doesn’t work")', pts: -2, hit: flags.vague, penalty: true },
+    { label: 'Too terse (under 4 words)', pts: -1, hit: flags.terse, penalty: true },
+    { label: 'Wall of text (800+ words, no structure or code block)', pts: -1, hit: flags.wall, penalty: true },
+  ]
+  // Follow-ups and anchored prompts can't both score: show only the one that applies.
+  const shown = parts.filter(p => !(p.label.startsWith('Follow-up') && !ctx.recent))
   let score = 0
+  for (const p of shown) if (p.hit) score += p.pts
+
   const reasons: string[] = []
   const tips: string[] = []
   const add: string[] = []
   const missing: string[] = []
-  const vague = words < 8 && VAGUE.test(t)
-  const terse = !vague && words < 4
-  const concrete = ANCHOR.test(t) || hasImage
-  const purpose = PURPOSE.test(t)
-  const criteria = CRITERIA.test(t)
-  const goodLength = words >= 12 && words <= 250
-  const wall = words > 400 && !t.includes('```')
-  const parts: GradePart[] = [
-    { label: 'Concrete: a file, function, command, error or screenshot', pts: 2, hit: concrete },
-    { label: 'Why: because…, so that…, the goal is…', pts: 1, hit: purpose },
-    { label: 'Done means: should…, must…, tests pass, without…', pts: 1, hit: criteria },
-    { label: 'Length: 12–250 words', pts: 1, hit: goodLength },
-    { label: 'Vague and tiny ("fix it", "doesn’t work")', pts: -2, hit: vague, penalty: true },
-    { label: 'Too terse (under 4 words)', pts: -1, hit: terse, penalty: true },
-    { label: 'Wall of text (400+ words, no code block)', pts: -1, hit: wall, penalty: true },
-  ]
-  for (const p of parts) if (p.hit) score += p.pts
-  if (vague) { reasons.push('vague'); tips.push(TIP.vague) }
-  if (terse) { reasons.push('too terse'); tips.push(TIP.terse) }
+  if (flags.vague) { reasons.push('vague'); tips.push(TIP.vague) }
+  if (flags.terse) { reasons.push('too terse'); tips.push(TIP.terse) }
   if (ANCHOR.test(t)) reasons.push('anchored to code/files')
   else if (hasImage) reasons.push('screenshot attached')
+  else if (followUp) reasons.push('follow-up')
   else { tips.push(TIP.anchor); add.push('in <file/function>'); missing.push('file') }
-  if (purpose) reasons.push('purpose stated'); else { tips.push(TIP.purpose); add.push('because <why>'); missing.push('why') }
-  if (criteria) reasons.push('success criteria'); else { tips.push(TIP.criteria); add.push('done when <check>'); missing.push('done-check') }
-  if (goodLength) reasons.push('good length')
-  if (wall) { reasons.push('wall of text'); tips.push(TIP.wall) }
-  let rank: Rank = score >= 4 ? 'S' : score === 3 ? 'A' : score === 2 ? 'B' : score === 1 ? 'C' : score === 0 ? 'D' : 'F'
+  if (flags.purpose) reasons.push('purpose stated')
+  else if (!followUp) { tips.push(TIP.purpose); add.push('because <why>'); missing.push('why') }
+  if (flags.done || flags.verify) {
+    if (flags.done) reasons.push('success criteria')
+    if (flags.verify) reasons.push('verifiable')
+  } else { tips.push(TIP.criteria); add.push('done when <check>'); missing.push('done-check') }
+  if (flags.scope) reasons.push('scoped')
+  if (flags.plan) reasons.push('plan first')
+  if (flags.example) reasons.push('example')
+  if (flags.length) reasons.push('good length')
+  if (flags.wall) { reasons.push('wall of text'); tips.push(TIP.wall) }
+  // Bonus habits get a tip only when the prompt is substantial enough to want them.
+  if (!flags.verify && (flags.done || words >= 15)) tips.push(TIP.verify)
+  if (!flags.scope && words >= 15) tips.push(TIP.scope)
+  if (!flags.plan && words >= 40) tips.push(TIP.plan)
+
+  let rank = rankFor(score)
   // Anti-stuffing: "fix `a.ts` because should" hits every signal but says nothing.
   if (words < 8 && (rank === 'S' || rank === 'A')) {
     rank = 'B'
     reasons.push('short: capped at B')
-    parts.push({ label: 'Under 8 words: capped at rank B (no keyword stuffing)', pts: 0, hit: true, penalty: true })
+    shown.push({ label: 'Under 8 words: capped at rank B (no keyword stuffing)', pts: 0, hit: true, penalty: true })
   }
   const short = words > 14 ? `${t.split(/\s+/).slice(0, 12).join(' ')}…` : t.replace(/[.!?]+$/, '')
   const upgrade = add.length && words <= 400 ? `${short} ${add.join(', ')}.` : null
   const tip = tips[0] ?? 'Textbook prompt. Keep it up!'
-  return { rank, xp: RANK_XP[rank], reasons, tip, tips, missing, upgrade, mode: 'task', score, parts }
+  return { rank, xp: RANK_XP[rank], reasons, tip, tips, missing, upgrade, mode: 'task', score, parts: shown }
 }
 
 /** Token-spend advice from how a turn actually went. */
@@ -344,6 +402,8 @@ export const LORE: Card[] = [
 // ── Concrete tips from what Claude actually did this turn ─────────────────
 
 export type Trace = {
+  /** Claude entered or left Plan mode this turn. */
+  planned?: boolean
   /** Files Claude edited or wrote, in order. */
   edits: string[]
   /** How often each file was read. */

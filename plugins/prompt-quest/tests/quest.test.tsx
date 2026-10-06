@@ -72,6 +72,19 @@ describe('prompt ranks', () => {
     expect(tips.some(t => t.includes('/clear before starting a new task'))).toBe(true)
     expect(tips.some(t => t.includes('Pick your model at the start'))).toBe(true)
   })
+  test('mid-session follow-ups build on the task instead of being vague', async () => {
+    const ctx = { recent: true, files: ['auth.ts'] }
+    expect(grade('fix it').rank).toBe('F')
+    expect(grade('fix it', 0, ctx).rank).toBe('C')
+    expect(grade('now do the same for the signup page, tests should pass', 0, ctx).rank).toBe('A')
+    expect(grade('now do the same for the signup page', 0, ctx).missing).toEqual(['done-check'])
+  })
+  test('agentic habits (verify, scope, plan) are what reach S', async () => {
+    expect(grade('fix the login bug in src/auth.ts because users get logged out after 5 minutes').rank).toBe('A')
+    const g = grade('Propose a plan before editing: we need rate limiting on /api/login because of brute force. Keep the public API the same and run the tests.')
+    expect(g.rank).toBe('S')
+    expect(g.reasons).toEqual(expect.arrayContaining(['plan first', 'scoped', 'verifiable']))
+  })
   test('a quick acknowledgement is neutral', async () => {
     expect(grade('yes').xp).toBe(0)
     expect(grade('Yes push them').xp).toBe(0)
