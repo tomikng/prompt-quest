@@ -1,0 +1,18 @@
+{
+  "name": "prompt-quest",
+  "owner": { "name": "tomikng", "url": "https://github.com/tomikng" },
+  "metadata": {
+    "description": "Prompt Quest: an RPG layer for Claude Code that teaches better prompting, token thrift and AI fundamentals."
+  },
+  "plugins": [
+    {
+      "name": "prompt-quest",
+      "source": "./plugins/prompt-quest",
+      "description": "Earn XP from sharp prompts, lose it on vague ones. Skill tree perks, daily quests, AI lore quizzes and an animated pixel-art hero.",
+      "version": "0.1.0",
+      "author": { "name": "tomikng" },
+      "category": "productivity",
+      "keywords": ["game", "rpg", "prompting", "tokens", "learning"]
+    }
+  ]
+}
